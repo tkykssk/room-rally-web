@@ -43,7 +43,6 @@ func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
 	stage = Stages.get_stage()
 	game_duration = stage.time
-	tier_thresholds.assign(stage.tiers)
 	records = _load_records()
 	best_score = record(Stages.current).best
 	reset()
@@ -129,10 +128,23 @@ func _process(delta: float) -> void:
 		_last_shown_time = shown
 		time_changed.emit(time_left)
 
-## Called by the prop spawner once the stage is laid out.
-func set_stage_props(count: int, points: int) -> void:
+## Called by the prop spawner once the stage is laid out. Tier thresholds
+## come from the points available below each tier, so a layout change keeps
+## the progression fair without hand-tuning numbers.
+func set_stage_props(count: int, points: int, points_by_tier: Dictionary = {}) -> void:
 	props_left = count
 	total_points = points
+	if not points_by_tier.is_empty():
+		tier_thresholds.clear()
+		var prev: = 0
+		for k in range(1, Stages.TIER_FRACTIONS.size() + 1):
+			var below: = 0
+			for t in points_by_tier:
+				if t < k:
+					below += points_by_tier[t]
+			var thr: = maxi(int(round(below * Stages.TIER_FRACTIONS[k - 1] / 10.0)) * 10, prev + 10)
+			tier_thresholds.append(thr)
+			prev = thr
 	star_goals.clear()
 	for f in Stages.STAR_FRACTIONS:
 		star_goals.append(points if f >= 1.0 else int(round(points * f / 50.0)) * 50)

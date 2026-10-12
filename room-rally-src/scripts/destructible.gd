@@ -1,5 +1,8 @@
 class_name Destructible extends Area3D
 
+## Emitted when this prop is smashed (props resting on it fall down).
+signal destroyed
+
 @export var model_scene: PackedScene
 ## Ready-made model (procedural toys) used instead of model_scene.
 var model_node: Node3D = null
@@ -16,6 +19,14 @@ var _destroyed: bool = false
 var _solid: StaticBody3D = null
 ## Radius of a circle covering the footprint (used to keep clutter out from under furniture).
 var footprint_radius: float = 0.0
+## Prop this one rests on (e.g. a cup on a table); when it is smashed this
+## one drops to the support's base height.
+var support: Destructible = null
+## Collision box in local space (top surface used for placing items on it).
+var box_center: = Vector3.ZERO
+var box_size: = Vector3.ZERO
+## Local bounds, used to fade the prop when the camera ends up inside it.
+var _bounds: AABB = AABB()
 
 const OCCLUDED_ALPHA: = 0.1
 const FADE_SPEED: = 12.0
@@ -88,19 +99,97 @@ func _build() -> void:
 	var cx: = (aabb.position.x + aabb.size.x * 0.5) * s
 	var cz: = (aabb.position.z + aabb.size.z * 0.5) * s
 	var center: = Vector3(cx, base_y + hgt * 0.5, cz)
+	box_center = center
+	box_size = Vector3(w, hgt, d)
 	var area_cs: = CollisionShape3D.new()
 	area_cs.shape = box
 	area_cs.position = center
 	add_child(area_cs)
 	_solid = StaticBody3D.new()
+	_solid.physics_material_override = obstacle_material()
 	add_child(_solid)
-	var solid_cs: = CollisionShape3D.new()
-	solid_cs.shape = box
-	solid_cs.position = center
-	_solid.add_child(solid_cs)
+	if size_tier > 0 and _is_open_furniture():
+		_add_mesh_collision(model)
+	else:
+		var solid_cs: = CollisionShape3D.new()
+		solid_cs.shape = box
+		solid_cs.position = center
+		_solid.add_child(solid_cs)
 	_occlude_radius = 0.5 * maxf(w, d)
+	_bounds = AABB(center - box.size * 0.5, box.size).grow(0.6)
 	if size_tier > 0:
 		_prepare_fade(model)
+
+## Tables get a top slab plus four leg posts, so the truck can drive under
+## them while it is small. (Their full mesh as collision trapped the ball in
+## the leg braces; a plain box felt like an invisible wall.) Everything else,
+## chairs included, keeps a box.
+const OPEN_MODELS: = ["table.glb"]
+const OPEN_MIN_HEIGHT: = 5.0
+
+func _is_open_furniture() -> bool:
+	return model_scene != null and target_height >= OPEN_MIN_HEIGHT \
+		and model_scene.resource_path.get_file() in OPEN_MODELS
+
+func _add_mesh_collision(model: Node3D) -> void:
+	var inv: = global_transform.affine_inverse()
+	var pts: = PackedVector3Array()
+	var stack: Array = [model]
+	while not stack.is_empty():
+		var n = stack.pop_back()
+		stack.append_array(n.get_children())
+		if n is MeshInstance3D and n.mesh != null:
+			var xf: Transform3D = inv * n.global_transform
+			for v in n.mesh.get_faces():
+				pts.append(xf * v)
+	if pts.is_empty():
+		return
+	var top_y: = -INF
+	var low_y: = INF
+	for v in pts:
+		top_y = maxf(top_y, v.y)
+		low_y = minf(low_y, v.y)
+	var h: = top_y - low_y
+	# Tabletop (and apron): everything in the top 20%.
+	var top: = AABB()
+	var first: = true
+	for v in pts:
+		if v.y > top_y - h * 0.2:
+			if first:
+				top = AABB(v, Vector3.ZERO)
+				first = false
+			else:
+				top = top.expand(v)
+	_add_solid_box(top.position, top.end)
+	# Legs: what is in the lower half, one post per quadrant.
+	var c: = top.get_center()
+	var legs: = {}
+	for v in pts:
+		if v.y < low_y + h * 0.5:
+			var k: = int(v.x > c.x) * 2 + int(v.z > c.z)
+			legs[k] = legs[k].expand(v) if legs.has(k) else AABB(v, Vector3.ZERO)
+	for k in legs:
+		var a: AABB = legs[k]
+		_add_solid_box(Vector3(a.position.x, low_y, a.position.z), Vector3(a.end.x, top.position.y, a.end.z))
+
+func _add_solid_box(from: Vector3, to: Vector3) -> void:
+	var sz: = (to - from).abs()
+	var shape: = BoxShape3D.new()
+	shape.size = Vector3(maxf(sz.x, 0.1), maxf(sz.y, 0.1), maxf(sz.z, 0.1))
+	var cs: = CollisionShape3D.new()
+	cs.shape = shape
+	cs.position = (from + to) * 0.5
+	_solid.add_child(cs)
+
+## Obstacles are slippery (the ball takes the lower friction, so it slides
+## along instead of climbing them) with a little bounce.
+static var _obstacle_mat: PhysicsMaterial = null
+static func obstacle_material() -> PhysicsMaterial:
+	if _obstacle_mat == null:
+		_obstacle_mat = PhysicsMaterial.new()
+		_obstacle_mat.friction = 0.0
+		_obstacle_mat.bounce = 0.25
+	return _obstacle_mat
 
 func _prepare_fade(model: Node3D) -> void:
 	var stack: Array = [model]
@@ -113,10 +202,13 @@ func _prepare_fade(model: Node3D) -> void:
 				var m = n.get_active_material(si)
 				if m is BaseMaterial3D:
 					var dup: BaseMaterial3D = m.duplicate()
-					# Dithered (alpha hash) from the start: fading then only
-					# changes a colour uniform. Toggling `transparency` at
-					# runtime rebuilds the shader and caused frame spikes.
-					dup.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA_HASH
+					# Alpha-blended from load, with depth writes so it looks
+					# solid at alpha 1: fading then only changes a colour
+					# uniform. Toggling `transparency` at runtime rebuilds the
+					# shader and caused frame spikes. (Alpha hash renders black
+					# in the Compatibility renderer, so it's not used.)
+					dup.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+					dup.depth_draw_mode = BaseMaterial3D.DEPTH_DRAW_ALWAYS
 					n.set_surface_override_material(si, dup)
 					_fade_mats.append(dup)
 
@@ -156,6 +248,8 @@ func _is_occluding_car() -> bool:
 			return false
 	var car: Vector3 = _vehicle.get_vehicle_position() if _vehicle.has_method("get_vehicle_position") else (_vehicle as Node3D).global_position
 	var cam_pos: = cam.global_position
+	if _bounds.has_point(to_local(cam_pos)):
+		return true
 	var prop_pos: = global_position + Vector3(0, target_height * 0.4, 0)
 	var to_car: = car - cam_pos
 	var car_dist: = to_car.length()
@@ -173,8 +267,34 @@ func try_smash() -> void:
 	if not _destroyed and is_destroyable():
 		_destroy()
 
+## Global height of this prop's top surface.
+func top_y() -> float:
+	return global_position.y + box_center.y + box_size.y * 0.5
+
+## A random point on this prop's top surface, in world space.
+func top_point(rng: RandomNumberGenerator) -> Vector3:
+	var local: = Vector3(
+		box_center.x + rng.randf_range(-0.35, 0.35) * box_size.x,
+		box_center.y + box_size.y * 0.5,
+		box_center.z + rng.randf_range(-0.35, 0.35) * box_size.z)
+	return to_global(local)
+
+## Rest on `s`; drop to its base height once it is smashed.
+func set_support(s: Destructible) -> void:
+	support = s
+	s.destroyed.connect(_on_support_destroyed.bind(s.global_position.y))
+
+func _on_support_destroyed(floor_y: float) -> void:
+	if _destroyed or not is_inside_tree():
+		return
+	var tw: = create_tween()
+	tw.tween_property(self, "global_position:y", floor_y, 0.35).set_ease(Tween.EASE_IN).set_trans(Tween.TRANS_QUAD)
+	tw.tween_property(self, "global_position:y", floor_y + 0.3, 0.1).set_ease(Tween.EASE_OUT)
+	tw.tween_property(self, "global_position:y", floor_y, 0.1).set_ease(Tween.EASE_IN)
+
 func _destroy() -> void:
 	_destroyed = true
+	destroyed.emit()
 	if _manager and _manager.has_method("add_score"):
 		_manager.add_score(score_value)
 		_manager.report_smash(global_position + Vector3(0, target_height, 0), score_value, target_height)

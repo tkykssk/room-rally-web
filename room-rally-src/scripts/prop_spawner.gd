@@ -3,65 +3,121 @@ extends Node3D
 const PROP: = preload("res://scenes/props/prop.tscn")
 const DECOR: = preload("res://scenes/props/decor.tscn")
 
-## Lays out the current stage (see Stages): rugs, hand-placed furniture, then
-## clutter scattered away from the furniture and the start point.
+## Lays out the current stage (see Stages): rugs, hand-placed furniture
+## (optionally on a platform via "y"), items on top of furniture ("on_top",
+## they fall when the furniture is smashed), then clutter scattered over an
+## area ("rect", optional "y" for platform tops) away from furniture, walls,
+## platforms, ramps and the start point.
 
 @export var clear_radius: float = 5.0
 @export var clutter_sep: float = 2.6
 @export var rng_seed: int = 12345
 
 var _stage: Dictionary
+var _rng: = RandomNumberGenerator.new()
+var _placed: Array = []
+var _hx: float = 40.0
+var _hz: float = 40.0
+## Clutter that found no free spot (for tuning stage data).
+var skipped: int = 0
 
 func _ready() -> void:
 	_stage = Stages.get_stage()
-	var placed: Array = []
+	_hx = _stage.get("hx", _stage.get("half", 40.0))
+	_hz = _stage.get("hz", _stage.get("half", 40.0))
+	_rng.seed = rng_seed
 	for it in _stage.rugs:
-		var rs: PackedScene = load(it.p)
-		if rs == null:
-			continue
 		var d: Node3D = DECOR.instantiate()
-		d.model_scene = rs
+		d.model_scene = load(it.p)
 		d.target_width = it.w
 		d.target_depth = it.d
 		add_child(d)
-		d.position = Vector3(it.x, 0.0, it.z)
+		d.position = Vector3(it.x, it.get("y", 0.0), it.z)
 		d.rotation.y = deg_to_rad(it.rot)
+	var by_id: = {}
 	for it in _stage.layout:
-		var scene: PackedScene = load(it.p)
-		if scene == null:
-			push_warning("layout model not found: %s" % it.p)
+		var y: float = it.get("y", 0.0)
+		var p: = _make(it, Vector3(it.x, y, it.z), deg_to_rad(it.get("rot", 0)))
+		if it.has("id"):
+			by_id[it.id] = p
+		_placed.append({"pos": Vector2(it.x, it.z), "sep": maxf(it.get("r", 3.0), p.footprint_radius + 1.0), "y": y})
+	for it in _stage.get("on_top", []):
+		var base: Destructible = by_id.get(it.on)
+		if base == null:
+			push_warning("on_top: no layout id %s" % it.on)
 			continue
-		var fp: = _spawn(scene, it.t, it.h, it.s, Vector3(it.x, 0.0, it.z), deg_to_rad(it.rot), it.get("sc", 0.0))
-		placed.append({"pos": Vector2(it.x, it.z), "sep": maxf(it.r, fp + 1.0)})
-	var rng: = RandomNumberGenerator.new()
-	rng.seed = rng_seed
-	for it in _stage.clutter:
+		var spots: Array = []
+		for i in it.get("c", 1):
+			var pos: = base.top_point(_rng)
+			for attempt in 10:
+				var ok: = true
+				for q in spots:
+					if Vector2(pos.x, pos.z).distance_to(q) < it.get("sep", 1.2):
+						ok = false
+						break
+				if ok:
+					break
+				pos = base.top_point(_rng)
+			spots.append(Vector2(pos.x, pos.z))
+			var p: = _make(it, pos, _rng.randf() * TAU)
+			p.set_support(base)
+	# Bigger things first so small clutter fills the gaps around them; an item
+	# with no free spot is skipped rather than dropped inside something else.
+	var clutter: Array = _stage.clutter.duplicate()
+	clutter.sort_custom(func(a, b): return a.h > b.h)
+	skipped = 0
+	for it in clutter:
+		var y: float = it.get("y", 0.0)
+		var rect: Array = it.get("rect", [-_hx + 4.0, -_hz + 4.0, _hx - 4.0, _hz - 4.0])
+		var sep: float = it.get("sep", maxf(clutter_sep * 0.6, it.h * 1.2))
 		for i in it.c:
-			var pos: = _find_spot(rng, placed, clutter_sep)
-			var rot: = rng.randf() * TAU
-			if it.has("toy"):
-				_spawn_node(ToyFactory.make(it.toy, rng.randi() % 7), it.t, it.h, it.s, Vector3(pos.x, 0.0, pos.y), rot)
-			else:
-				_spawn(load(it.p), it.t, it.h, it.s, Vector3(pos.x, 0.0, pos.y), rot, 0.0, it.get("col", Color(0, 0, 0, 0)))
-			placed.append({"pos": pos, "sep": clutter_sep})
+			var pos = _find_spot(rect, y, sep)
+			if pos == null:
+				skipped += 1
+				continue
+			_make(it, Vector3(pos.x, y, pos.y), _rng.randf() * TAU)
+			_placed.append({"pos": pos, "sep": sep, "y": y})
 	_report_totals()
 	_warmup_shaders()
+
+## Spawn one prop from a stage entry: {p | toy, t, h, s, sc?, col?}.
+func _make(it: Dictionary, pos: Vector3, rot_y: float) -> Destructible:
+	var p: Destructible = PROP.instantiate()
+	if it.has("toy"):
+		p.model_node = ToyFactory.make(it.toy, _rng.randi() % 7)
+	else:
+		p.model_scene = load(it.p)
+		p.tint = it.get("col", Color(0, 0, 0, 0))
+	p.size_tier = it.t
+	p.score_value = it.s
+	p.target_height = it.h
+	p.target_scale = it.get("sc", 0.0)
+	add_child(p)
+	p.position = pos
+	p.rotation.y = rot_y
+	return p
 
 func _report_totals() -> void:
 	var count: = 0
 	var points: = 0
+	var by_tier: = {}
 	for c in get_children():
 		if c is Destructible:
 			count += 1
 			points += c.score_value
+			# Tier goals count only what sits on the floor: things up on
+			# counters and lofts need a ramp or a bigger truck, so they
+			# must not be required to grow.
+			if c.global_position.y < 0.5:
+				by_tier[c.size_tier] = by_tier.get(c.size_tier, 0) + c.score_value
 	var gm: = get_tree().get_first_node_in_group("game_manager")
 	if gm and gm.has_method("set_stage_props"):
-		gm.set_stage_props(count, points)
+		gm.set_stage_props(count, points, by_tier)
 
 func _warmup_shaders() -> void:
 	var paths: = {}
-	for key in ["layout", "clutter", "rugs"]:
-		for it in _stage[key]:
+	for key in ["layout", "clutter", "rugs", "on_top"]:
+		for it in _stage.get(key, []):
 			if it.has("p"):
 				paths[it.p] = true
 	var warm: = Node3D.new()
@@ -115,47 +171,42 @@ func _make_transparent(node: Node3D) -> void:
 				var m = n.get_active_material(si)
 				if m is BaseMaterial3D:
 					var dup: BaseMaterial3D = m.duplicate()
-					dup.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA_HASH
+					dup.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+					dup.depth_draw_mode = BaseMaterial3D.DEPTH_DRAW_ALWAYS
 					var col: Color = dup.albedo_color
 					col.a = 0.5
 					dup.albedo_color = col
 					n.set_surface_override_material(si, dup)
 
-## Returns the spawned prop's footprint radius.
-func _spawn(scene: PackedScene, t: int, h: float, s: int, pos: Vector3, rot_y: float, sc: float = 0.0, tint: Color = Color(0, 0, 0, 0)) -> float:
-	var p: Destructible = PROP.instantiate()
-	p.tint = tint
-	p.model_scene = scene
-	p.size_tier = t
-	p.score_value = s
-	p.target_height = h
-	p.target_scale = sc
-	add_child(p)
-	p.position = pos
-	p.rotation.y = rot_y
-	return p.footprint_radius
-
-func _spawn_node(model: Node3D, t: int, h: float, s: int, pos: Vector3, rot_y: float) -> void:
-	var p: Destructible = PROP.instantiate()
-	p.model_node = model
-	p.size_tier = t
-	p.score_value = s
-	p.target_height = h
-	add_child(p)
-	p.position = pos
-	p.rotation.y = rot_y
-
-func _find_spot(rng: RandomNumberGenerator, placed: Array, sep: float) -> Vector2:
-	var room_half: float = _stage.half - 5.0
-	for attempt in 60:
-		var p: = Vector2(rng.randf_range(-room_half, room_half), rng.randf_range(-room_half, room_half))
-		if p.length() < clear_radius:
+## A free spot in `rect`, or null if there's no room left.
+func _find_spot(rect: Array, y: float, sep: float):
+	for attempt in 80:
+		var p: = Vector2(_rng.randf_range(rect[0], rect[2]), _rng.randf_range(rect[1], rect[3]))
+		if y == 0.0 and (p.length() < clear_radius or _blocked_by_structure(p)):
 			continue
 		var ok: = true
-		for q in placed:
-			if p.distance_to(q.pos) < maxf(sep, q.sep):
+		for q in _placed:
+			if absf(q.y - y) < 0.5 and p.distance_to(q.pos) < maxf(sep, q.sep):
 				ok = false
 				break
 		if ok:
 			return p
-	return Vector2(rng.randf_range(-room_half, room_half), rng.randf_range(-room_half, room_half))
+	return null
+
+## Floor clutter stays clear of platforms, ramps and interior walls.
+func _blocked_by_structure(p: Vector2) -> bool:
+	for pl in _stage.get("platforms", []):
+		var b: Array = pl.box
+		if absf(p.x - b[0]) < b[2] * 0.5 + 1.2 and absf(p.y - b[1]) < b[3] * 0.5 + 1.2:
+			return true
+	for r in _stage.get("ramps", []):
+		var a: = Vector2(r.from[0], r.from[1])
+		var c: = Vector2(r.to[0], r.to[1])
+		if Geometry2D.get_closest_point_to_segment(p, a, c).distance_to(p) < r.get("w", 3.0) * 0.5 + 1.2:
+			return true
+	for w in _stage.get("walls", []):
+		var a: = Vector2(w.from[0], w.from[1])
+		var c: = Vector2(w.to[0], w.to[1])
+		if Geometry2D.get_closest_point_to_segment(p, a, c).distance_to(p) < 1.6:
+			return true
+	return false
