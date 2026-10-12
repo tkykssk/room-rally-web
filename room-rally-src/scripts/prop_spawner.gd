@@ -83,6 +83,22 @@ func _warmup_shaders() -> void:
 		trans.position = _warm_pos(i)
 		_make_transparent(trans)
 		i += 1
+	# Smash debris and see-through toys use their own shaders; draw them once
+	# now so the first smash doesn't stall while WebGL compiles them.
+	var fx: = CPUParticles3D.new()
+	fx.mesh = Destructible._get_debris_mesh()
+	fx.color_initial_ramp = Destructible._get_debris_colors()
+	fx.amount = 4
+	fx.lifetime = 0.5
+	fx.scale_amount_min = 0.1
+	fx.scale_amount_max = 0.1
+	warm.add_child(fx)
+	fx.position = _warm_pos(i)
+	var toy: = ToyFactory.make("block")
+	warm.add_child(toy)
+	toy.scale = Vector3.ONE * 0.3
+	toy.position = _warm_pos(i + 1)
+	_make_transparent(toy)
 	get_tree().create_timer(1.0).timeout.connect(warm.queue_free)
 
 func _warm_pos(i: int) -> Vector3:

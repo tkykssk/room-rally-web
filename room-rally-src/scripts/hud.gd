@@ -404,6 +404,9 @@ func _credit(parent: Control) -> void:
 class StarIcon extends Control:
 	var filled: bool = false
 
+	func _init() -> void:
+		mouse_filter = Control.MOUSE_FILTER_IGNORE
+
 	func _draw() -> void:
 		var c: = size * 0.5
 		var r: = minf(size.x, size.y) * 0.5

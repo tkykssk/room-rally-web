@@ -178,10 +178,17 @@ func _destroy() -> void:
 	_spawn_effect(global_position, target_height)
 	queue_free()
 
+## Smash effects alive right now. When the truck is huge it can wreck a dozen
+## props in one frame; capping effects keeps that frame from stalling.
+static var _active_fx: int = 0
+const MAX_ACTIVE_FX: = 6
+
 func _spawn_effect(pos: Vector3, h: float) -> void:
 	var host: = get_parent()
-	if host == null:
+	if host == null or _active_fx >= MAX_ACTIVE_FX:
 		return
+	_active_fx += 1
+	host.get_tree().create_timer(0.6).timeout.connect(func(): _active_fx -= 1)
 	var fx: = CPUParticles3D.new()
 	fx.emitting = false
 	fx.one_shot = true

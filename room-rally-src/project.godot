@@ -27,6 +27,7 @@ config/icon="res://icon.png"
 
 Audio="*res://scripts/audio.gd"
 CG="*res://scripts/crazygames.gd"
+RenderQuality="*res://scripts/render_quality.gd"
 
 [display]
 
@@ -98,9 +99,11 @@ pointing/emulate_touch_from_mouse=true
 [physics]
 
 3d/physics_engine="Jolt Physics"
+common/max_physics_steps_per_frame=4
 
 [rendering]
 
 renderer/rendering_method="gl_compatibility"
 renderer/rendering_method.mobile="gl_compatibility"
 lights_and_shadows/directional_shadow/size=2048
+lights_and_shadows/directional_shadow/soft_shadow_filter_quality=1
