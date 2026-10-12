@@ -113,6 +113,10 @@ func _prepare_fade(model: Node3D) -> void:
 				var m = n.get_active_material(si)
 				if m is BaseMaterial3D:
 					var dup: BaseMaterial3D = m.duplicate()
+					# Dithered (alpha hash) from the start: fading then only
+					# changes a colour uniform. Toggling `transparency` at
+					# runtime rebuilds the shader and caused frame spikes.
+					dup.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA_HASH
 					n.set_surface_override_material(si, dup)
 					_fade_mats.append(dup)
 
@@ -141,7 +145,6 @@ func _apply_alpha(a: float) -> void:
 		var col: Color = m.albedo_color
 		col.a = a
 		m.albedo_color = col
-		m.transparency = BaseMaterial3D.TRANSPARENCY_DISABLED if a >= 0.99 else BaseMaterial3D.TRANSPARENCY_ALPHA
 
 func _is_occluding_car() -> bool:
 	var cam: = get_viewport().get_camera_3d()

@@ -115,7 +115,7 @@ func _make_transparent(node: Node3D) -> void:
 				var m = n.get_active_material(si)
 				if m is BaseMaterial3D:
 					var dup: BaseMaterial3D = m.duplicate()
-					dup.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+					dup.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA_HASH
 					var col: Color = dup.albedo_color
 					col.a = 0.5
 					dup.albedo_color = col
