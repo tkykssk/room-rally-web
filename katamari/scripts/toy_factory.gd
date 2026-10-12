@@ -1,0 +1,308 @@
+class_name ToyFactory extends RefCounted
+
+## Small procedural props (coins, crayons, rubber ducks...) built from primitive
+## meshes. They fill the bottom of the size ladder below the Kenney models, so
+## the very first seconds of a run already have plenty to roll up.
+## Each (kind, variant) mesh is built once and shared.
+
+const KINDS: = {
+	"coin": "Coin", "marble": "Marble", "button": "Button", "candy": "Candy",
+	"die": "Dice", "donut": "Donut", "eraser": "Eraser", "crayon": "Crayon",
+	"pencil": "Pencil", "block": "Toy Block", "duck": "Rubber Duck",
+	"car": "Toy Car", "ball": "Ball", "cone": "Toy Cone", "teddy": "Teddy Bear",
+	"cushion": "Cushion", "slipper": "Slipper", "apple": "Apple",
+	"orange": "Orange", "remote": "TV Remote", "phone": "Phone",
+	"tissue": "Tissue Box", "robot": "Toy Robot", "paper": "Paper Ball",
+	"globe": "Globe", "basketball": "Basketball", "piggy": "Piggy Bank",
+	"cactus": "Cactus", "suitcase": "Suitcase", "drum": "Toy Drum",
+	"beachball": "Beach Ball", "guitar": "Guitar", "fan": "Electric Fan",
+	"skateboard": "Skateboard", "dollhouse": "Dollhouse", "basket": "Laundry Basket",
+}
+
+const BRIGHT: = [
+	Color("e8576d"), Color("3fa7c9"), Color("f2b33d"), Color("6c6fd1"),
+	Color("5cbf7a"), Color("e57fb8"), Color("f08a3c"),
+]
+
+static var _meshes: Dictionary = {}
+static var _material: StandardMaterial3D = null
+
+static func display_name(kind: String) -> String:
+	return KINDS.get(kind, kind.capitalize())
+
+static func make(kind: String, variant: int = 0) -> Node3D:
+	var key: = "%s/%d" % [kind, variant]
+	if not _meshes.has(key):
+		_meshes[key] = _build(kind, variant)
+	var root: = Node3D.new()
+	var mi: = MeshInstance3D.new()
+	mi.mesh = _meshes[key]
+	root.add_child(mi)
+	return root
+
+static func _mat() -> StandardMaterial3D:
+	if _material == null:
+		_material = StandardMaterial3D.new()
+		_material.vertex_color_use_as_albedo = true
+		_material.roughness = 0.55
+	return _material
+
+static func _c(variant: int, offset: int = 0) -> Color:
+	return BRIGHT[(variant + offset) % BRIGHT.size()]
+
+static func _build(kind: String, v: int) -> ArrayMesh:
+	var b: = _Builder.new()
+	match kind:
+		"coin":
+			b.cyl(0.12, 0.03, Vector3(0, 0.015, 0), Color("f5c542"), 16)
+			b.cyl(0.09, 0.034, Vector3(0, 0.015, 0), Color("e0a92a"), 16)
+		"marble":
+			b.sphere(0.08, Vector3(0, 0.08, 0), _c(v).lightened(0.2), 10)
+		"button":
+			b.cyl(0.1, 0.035, Vector3(0, 0.0175, 0), _c(v), 14)
+			for i in 4:
+				var a: = TAU * i / 4.0 + 0.6
+				b.cyl(0.015, 0.04, Vector3(cos(a) * 0.035, 0.02, sin(a) * 0.035), _c(v).darkened(0.5), 6)
+		"candy":
+			b.sphere(0.08, Vector3(0, 0.08, 0), _c(v), 10)
+			b.cone(0.07, 0.1, Vector3(0.12, 0.08, 0), _c(v).lightened(0.4), Vector3(0, 0, 90))
+			b.cone(0.07, 0.1, Vector3(-0.12, 0.08, 0), _c(v).lightened(0.4), Vector3(0, 0, -90))
+		"die":
+			b.box(Vector3(0.16, 0.16, 0.16), Vector3(0, 0.08, 0), Color("f7f3ea"))
+			for p in [Vector2(0, 0), Vector2(-0.04, -0.04), Vector2(0.04, 0.04), Vector2(-0.04, 0.04), Vector2(0.04, -0.04)]:
+				b.sphere(0.014, Vector3(p.x, 0.16, p.y), Color("d23b3b"), 6)
+		"donut":
+			b.torus(0.06, 0.16, Vector3(0, 0.05, 0), Color("c98a4b"))
+			b.torus(0.07, 0.15, Vector3(0, 0.075, 0), _c(v, 5).lightened(0.25), Vector3(1, 0.5, 1))
+		"eraser":
+			b.box(Vector3(0.3, 0.1, 0.15), Vector3(0, 0.05, 0), Color("f4a3b5"))
+			b.box(Vector3(0.14, 0.105, 0.155), Vector3(0.05, 0.05, 0), _c(v, 1))
+		"crayon":
+			b.cyl(0.04, 0.4, Vector3(0, 0.04, 0), _c(v), 8, Vector3(0, 0, 90))
+			b.cone(0.04, 0.08, Vector3(0.24, 0.04, 0), _c(v).darkened(0.2), Vector3(0, 0, -90))
+		"pencil":
+			b.cyl(0.04, 0.8, Vector3(0, 0.04, 0), Color("f2c230"), 6, Vector3(0, 0, 90))
+			b.cone(0.04, 0.12, Vector3(0.46, 0.04, 0), Color("e8c49a"), Vector3(0, 0, -90))
+			b.cyl(0.042, 0.08, Vector3(-0.44, 0.04, 0), Color("f4a3b5"), 8, Vector3(0, 0, 90))
+		"block":
+			b.box(Vector3(0.3, 0.3, 0.3), Vector3(0, 0.15, 0), _c(v))
+			b.box(Vector3(0.2, 0.31, 0.2), Vector3(0, 0.15, 0), _c(v).lightened(0.35))
+		"duck":
+			b.sphere(0.22, Vector3(0, 0.18, 0), Color("ffd23f"), 12, Vector3(1.25, 0.85, 1))
+			b.sphere(0.14, Vector3(0.14, 0.4, 0), Color("ffd23f"), 10)
+			b.cone(0.06, 0.12, Vector3(0.3, 0.38, 0), Color("f08a3c"), Vector3(0, 0, -90))
+			b.sphere(0.025, Vector3(0.24, 0.45, 0.07), Color("222222"), 6)
+			b.sphere(0.025, Vector3(0.24, 0.45, -0.07), Color("222222"), 6)
+		"car":
+			b.box(Vector3(0.7, 0.18, 0.34), Vector3(0, 0.15, 0), _c(v))
+			b.box(Vector3(0.36, 0.16, 0.3), Vector3(-0.05, 0.32, 0), _c(v).lightened(0.3))
+			for w in [Vector2(0.22, 0.17), Vector2(-0.22, 0.17), Vector2(0.22, -0.17), Vector2(-0.22, -0.17)]:
+				b.cyl(0.09, 0.07, Vector3(w.x, 0.09, w.y), Color("2b2b2b"), 10, Vector3(90, 0, 0))
+		"ball":
+			b.sphere(0.35, Vector3(0, 0.35, 0), _c(v), 14)
+			b.torus(0.33, 0.37, Vector3(0, 0.35, 0), Color("ffffff"), Vector3(1, 1, 1), Vector3(90, 0, 0))
+		"cone":
+			b.box(Vector3(0.4, 0.05, 0.4), Vector3(0, 0.025, 0), Color("f08a3c"))
+			b.cone(0.15, 0.55, Vector3(0, 0.32, 0), Color("f08a3c"))
+			b.cyl(0.11, 0.08, Vector3(0, 0.3, 0), Color("ffffff"), 12)
+		"teddy":
+			var fur: = Color("b07a4f")
+			b.sphere(0.5, Vector3(0, 0.55, 0), fur, 12, Vector3(1, 1.1, 0.9))
+			b.sphere(0.38, Vector3(0, 1.3, 0), fur, 12)
+			b.sphere(0.14, Vector3(0.28, 1.6, 0), fur, 8)
+			b.sphere(0.14, Vector3(-0.28, 1.6, 0), fur, 8)
+			b.sphere(0.15, Vector3(0, 1.22, 0.33), Color("e8c9a0"), 8)
+			b.sphere(0.2, Vector3(0.45, 0.6, 0.15), fur, 8)
+			b.sphere(0.2, Vector3(-0.45, 0.6, 0.15), fur, 8)
+			b.sphere(0.22, Vector3(0.28, 0.15, 0.3), fur, 8)
+			b.sphere(0.22, Vector3(-0.28, 0.15, 0.3), fur, 8)
+			b.sphere(0.05, Vector3(0.13, 1.4, 0.33), Color("222222"), 6)
+			b.sphere(0.05, Vector3(-0.13, 1.4, 0.33), Color("222222"), 6)
+		"cushion":
+			b.box(Vector3(1.6, 0.4, 1.6), Vector3(0, 0.2, 0), _c(v))
+			b.box(Vector3(1.3, 0.46, 1.3), Vector3(0, 0.22, 0), _c(v).lightened(0.15))
+		"slipper":
+			b.box(Vector3(0.32, 0.08, 0.75), Vector3(0, 0.04, 0), _c(v).lightened(0.3))
+			b.box(Vector3(0.32, 0.14, 0.32), Vector3(0, 0.11, 0.2), _c(v))
+		"apple":
+			b.sphere(0.18, Vector3(0, 0.17, 0), Color("d9363e"), 12)
+			b.cyl(0.015, 0.08, Vector3(0, 0.37, 0), Color("6b4a2b"), 6)
+			b.sphere(0.05, Vector3(0.05, 0.36, 0), Color("5cbf7a"), 6, Vector3(1.4, 0.4, 0.8))
+		"orange":
+			b.sphere(0.18, Vector3(0, 0.17, 0), Color("f58f29"), 12)
+			b.sphere(0.03, Vector3(0, 0.35, 0), Color("4d8f3a"), 6)
+		"remote":
+			b.box(Vector3(0.2, 0.07, 0.6), Vector3(0, 0.035, 0), Color("2d2f36"))
+			b.box(Vector3(0.06, 0.075, 0.06), Vector3(0, 0.04, -0.2), Color("e8576d"))
+			for i in 3:
+				b.box(Vector3(0.12, 0.075, 0.04), Vector3(0, 0.04, -0.05 + i * 0.08), Color("8a8f99"))
+		"phone":
+			b.box(Vector3(0.36, 0.04, 0.72), Vector3(0, 0.02, 0), Color("2d2f36"))
+			b.box(Vector3(0.31, 0.045, 0.6), Vector3(0, 0.022, 0), _c(v, 1).lightened(0.3))
+		"tissue":
+			b.box(Vector3(0.6, 0.36, 0.4), Vector3(0, 0.18, 0), _c(v, 2).lightened(0.45))
+			b.sphere(0.12, Vector3(0, 0.38, 0), Color("ffffff"), 8, Vector3(1.2, 0.8, 0.8))
+		"robot":
+			var steel: = Color("9aa7b4")
+			b.box(Vector3(0.5, 0.55, 0.35), Vector3(0, 0.55, 0), steel)
+			b.box(Vector3(0.38, 0.32, 0.32), Vector3(0, 1.0, 0), steel.lightened(0.2))
+			b.box(Vector3(0.14, 0.3, 0.14), Vector3(0.13, 0.15, 0), steel.darkened(0.3))
+			b.box(Vector3(0.14, 0.3, 0.14), Vector3(-0.13, 0.15, 0), steel.darkened(0.3))
+			b.box(Vector3(0.1, 0.4, 0.1), Vector3(0.32, 0.6, 0), steel.darkened(0.15))
+			b.box(Vector3(0.1, 0.4, 0.1), Vector3(-0.32, 0.6, 0), steel.darkened(0.15))
+			b.sphere(0.05, Vector3(0.08, 1.04, 0.17), Color("5ad1ff"), 6)
+			b.sphere(0.05, Vector3(-0.08, 1.04, 0.17), Color("5ad1ff"), 6)
+			b.cyl(0.015, 0.15, Vector3(0, 1.23, 0), steel, 6)
+			b.sphere(0.04, Vector3(0, 1.32, 0), Color("e8576d"), 6)
+		"paper":
+			b.sphere(0.15, Vector3(0, 0.14, 0), Color("f4f1e8"), 6)
+		"globe":
+			b.cyl(0.25, 0.08, Vector3(0, 0.04, 0), Color("6b4a2b"), 12)
+			b.cyl(0.03, 0.4, Vector3(0, 0.25, 0), Color("c9a24b"), 6)
+			b.sphere(0.45, Vector3(0, 0.85, 0), Color("3f8fd1"), 14)
+			b.sphere(0.2, Vector3(0.22, 0.98, 0.25), Color("5cbf7a"), 8, Vector3(1.2, 1, 0.6))
+			b.sphere(0.16, Vector3(-0.25, 0.72, 0.27), Color("5cbf7a"), 8, Vector3(1, 1.3, 0.6))
+		"basketball":
+			b.sphere(0.6, Vector3(0, 0.6, 0), Color("e8772e"), 16)
+			b.torus(0.58, 0.62, Vector3(0, 0.6, 0), Color("3a2a20"), Vector3(1, 1, 1), Vector3(90, 0, 0))
+			b.torus(0.58, 0.62, Vector3(0, 0.6, 0), Color("3a2a20"), Vector3(1, 1, 1), Vector3(0, 0, 90))
+		"piggy":
+			var pink: = Color("f4a3b5")
+			b.sphere(0.4, Vector3(0, 0.45, 0), pink, 12, Vector3(1.3, 1, 1))
+			b.cyl(0.13, 0.12, Vector3(0.55, 0.45, 0), pink.darkened(0.1), 10, Vector3(0, 0, 90))
+			for p in [Vector2(0.25, 0.2), Vector2(-0.25, 0.2), Vector2(0.25, -0.2), Vector2(-0.25, -0.2)]:
+				b.cyl(0.08, 0.15, Vector3(p.x, 0.075, p.y), pink.darkened(0.15), 8)
+			b.cone(0.09, 0.14, Vector3(0.32, 0.82, 0.15), pink, Vector3(0, 0, 0))
+			b.cone(0.09, 0.14, Vector3(0.32, 0.82, -0.15), pink, Vector3(0, 0, 0))
+			b.box(Vector3(0.2, 0.03, 0.04), Vector3(0, 0.85, 0), Color("333333"))
+		"cactus":
+			b.cyl(0.25, 0.35, Vector3(0, 0.175, 0), Color("c8673d"), 12)
+			b.sphere(0.22, Vector3(0, 0.7, 0), Color("3fae6a"), 10, Vector3(1, 1.9, 1))
+			b.sphere(0.1, Vector3(0.2, 0.75, 0), Color("3fae6a"), 8, Vector3(1, 1.8, 1))
+			b.sphere(0.05, Vector3(0, 1.12, 0), Color("e57fb8"), 6)
+		"suitcase":
+			b.box(Vector3(2.2, 1.5, 0.8), Vector3(0, 0.8, 0), _c(v, 3))
+			b.box(Vector3(2.25, 0.12, 0.85), Vector3(0, 0.8, 0), _c(v, 3).darkened(0.3))
+			b.box(Vector3(0.7, 0.12, 0.15), Vector3(0, 1.62, 0), Color("2d2f36"))
+			for x in [-0.9, 0.9]:
+				b.cyl(0.08, 0.1, Vector3(x, 0.06, 0.25), Color("2d2f36"), 8, Vector3(90, 0, 0))
+		"drum":
+			b.cyl(0.75, 0.8, Vector3(0, 0.4, 0), _c(v), 16)
+			b.cyl(0.78, 0.08, Vector3(0, 0.82, 0), Color("f4f1e8"), 16)
+			b.cyl(0.78, 0.08, Vector3(0, 0.04, 0), Color("f4f1e8"), 16)
+			b.cyl(0.03, 0.9, Vector3(0.3, 1.0, 0), Color("c98a4b"), 6, Vector3(0, 0, 50))
+		"beachball":
+			for i in 6:
+				var seg: = SphereMesh.new()
+				seg.radius = 0.9
+				seg.height = 1.8
+				seg.radial_segments = 6
+				seg.rings = 8
+				b.add_xf(seg, Transform3D(Basis(Vector3.UP, i * TAU / 6.0).scaled(Vector3(1.0 - i * 0.001, 1, 1)), Vector3(0, 0.9, 0)), _c(v, i) if i % 2 == 0 else Color("ffffff"))
+		"guitar":
+			b.sphere(0.55, Vector3(-0.55, 0.2, 0), Color("c98a4b"), 12, Vector3(1, 0.35, 0.85))
+			b.sphere(0.42, Vector3(0.15, 0.2, 0), Color("c98a4b"), 12, Vector3(1, 0.35, 0.8))
+			b.cyl(0.18, 0.05, Vector3(-0.3, 0.38, 0), Color("3a2a20"), 12)
+			b.box(Vector3(1.8, 0.1, 0.16), Vector3(1.3, 0.25, 0), Color("6b4a2b"))
+			b.box(Vector3(0.4, 0.12, 0.28), Vector3(2.35, 0.25, 0), Color("3a2a20"))
+		"fan":
+			b.cyl(0.6, 0.15, Vector3(0, 0.075, 0), Color("f4f1e8"), 14)
+			b.cyl(0.08, 1.9, Vector3(0, 1.1, 0), Color("f4f1e8"), 8)
+			b.cyl(0.85, 0.35, Vector3(0, 2.4, 0), _c(v, 1).lightened(0.3), 16, Vector3(90, 0, 0))
+			b.sphere(0.25, Vector3(0, 2.4, 0.25), Color("f4f1e8"), 10)
+		"skateboard":
+			b.box(Vector3(2.4, 0.1, 0.7), Vector3(0, 0.3, 0), _c(v, 2))
+			b.box(Vector3(2.0, 0.11, 0.5), Vector3(0, 0.3, 0), Color("2d2f36"))
+			for p in [Vector2(0.75, 0.25), Vector2(-0.75, 0.25), Vector2(0.75, -0.25), Vector2(-0.75, -0.25)]:
+				b.cyl(0.11, 0.1, Vector3(p.x, 0.12, p.y), Color("f2b33d"), 10, Vector3(90, 0, 0))
+		"dollhouse":
+			b.box(Vector3(2.6, 1.8, 1.6), Vector3(0, 0.9, 0), Color("f6efe2"))
+			b.box(Vector3(2.8, 0.9, 1.7), Vector3(0, 2.1, 0), _c(v))
+			b.box(Vector3(0.5, 0.9, 0.05), Vector3(0, 0.45, 0.8), Color("a8683f"))
+			b.box(Vector3(0.5, 0.45, 0.05), Vector3(-0.85, 1.2, 0.8), Color("bfe6ff"))
+			b.box(Vector3(0.5, 0.45, 0.05), Vector3(0.85, 1.2, 0.8), Color("bfe6ff"))
+		"basket":
+			b.cyl(0.8, 1.3, Vector3(0, 0.65, 0), _c(v, 4).lightened(0.35), 16)
+			b.cyl(0.84, 0.15, Vector3(0, 1.25, 0), _c(v, 4), 16)
+			b.sphere(0.45, Vector3(0.1, 1.35, 0), _c(v, 1).lightened(0.3), 8, Vector3(1.4, 0.6, 1.2))
+		_:
+			b.box(Vector3(0.3, 0.3, 0.3), Vector3(0, 0.15, 0), _c(v))
+	var mesh: = b.commit()
+	mesh.surface_set_material(0, _mat())
+	return mesh
+
+
+## Merges transformed primitive meshes into one vertex-coloured surface.
+class _Builder:
+	var verts: = PackedVector3Array()
+	var normals: = PackedVector3Array()
+	var colors: = PackedColorArray()
+	var indices: = PackedInt32Array()
+
+	func add(mesh: PrimitiveMesh, pos: Vector3, color: Color, rot_deg: Vector3 = Vector3.ZERO, scl: Vector3 = Vector3.ONE) -> void:
+		add_xf(mesh, Transform3D(Basis.from_euler(rot_deg * (PI / 180.0)).scaled_local(scl), pos), color)
+
+	func add_xf(mesh: PrimitiveMesh, xf: Transform3D, color: Color) -> void:
+		var arrays: = mesh.get_mesh_arrays()
+		var basis: = xf.basis
+		var pos: = xf.origin
+		var nb: = basis.inverse().transposed()
+		var base: = verts.size()
+		var vs: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+		var ns: PackedVector3Array = arrays[Mesh.ARRAY_NORMAL]
+		for i in vs.size():
+			verts.append(basis * vs[i] + pos)
+			normals.append((nb * ns[i]).normalized())
+			colors.append(color)
+		for idx in arrays[Mesh.ARRAY_INDEX]:
+			indices.append(base + idx)
+
+	func box(size: Vector3, pos: Vector3, color: Color) -> void:
+		var m: = BoxMesh.new()
+		m.size = size
+		add(m, pos, color)
+
+	func sphere(r: float, pos: Vector3, color: Color, seg: int = 10, scl: Vector3 = Vector3.ONE) -> void:
+		var m: = SphereMesh.new()
+		m.radius = r
+		m.height = r * 2.0
+		m.radial_segments = seg
+		m.rings = maxi(seg / 2, 4)
+		add(m, pos, color, Vector3.ZERO, scl)
+
+	func cyl(r: float, h: float, pos: Vector3, color: Color, seg: int = 10, rot: Vector3 = Vector3.ZERO) -> void:
+		var m: = CylinderMesh.new()
+		m.top_radius = r
+		m.bottom_radius = r
+		m.height = h
+		m.radial_segments = seg
+		m.rings = 1
+		add(m, pos, color, rot)
+
+	func cone(r: float, h: float, pos: Vector3, color: Color, rot: Vector3 = Vector3.ZERO) -> void:
+		var m: = CylinderMesh.new()
+		m.top_radius = 0.0
+		m.bottom_radius = r
+		m.height = h
+		m.radial_segments = 10
+		m.rings = 1
+		add(m, pos, color, rot)
+
+	func torus(inner: float, outer: float, pos: Vector3, color: Color, scl: Vector3 = Vector3.ONE, rot: Vector3 = Vector3.ZERO) -> void:
+		var m: = TorusMesh.new()
+		m.inner_radius = inner
+		m.outer_radius = outer
+		m.rings = 16
+		m.ring_segments = 8
+		add(m, pos, color, rot, scl)
+
+	func commit() -> ArrayMesh:
+		var arrays: = []
+		arrays.resize(Mesh.ARRAY_MAX)
+		arrays[Mesh.ARRAY_VERTEX] = verts
+		arrays[Mesh.ARRAY_NORMAL] = normals
+		arrays[Mesh.ARRAY_COLOR] = colors
+		arrays[Mesh.ARRAY_INDEX] = indices
+		var mesh: = ArrayMesh.new()
+		mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+		return mesh

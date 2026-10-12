@@ -3,11 +3,13 @@ extends Node3D
 @export var model_scene: PackedScene
 @export var target_width: float = 10.0
 @export var target_depth: float = 7.0
+@export var style: int = 0
 
 func _ready() -> void:
 	if model_scene == null:
 		return
 	var m: Node3D = model_scene.instantiate()
+	Palette.apply(m, style)
 	add_child(m)
 	var a: = _local_aabb(m)
 	var sx: float = target_width / maxf(a.size.x, 0.001)

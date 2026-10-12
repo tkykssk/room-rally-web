@@ -1,134 +1,56 @@
 [gd_scene format=3]
 
-[ext_resource type="Environment" path="res://scenes/main-environment.tres" id="1_yf80j"]
-[ext_resource type="Script" path="res://scripts/drop_wall.gd" id="2_opo2q"]
-[ext_resource type="Script" path="res://scripts/camera_rig.gd" id="3_iv0h0"]
-[ext_resource type="PackedScene" path="res://scenes/player.tscn" id="4_rt0lq"]
-[ext_resource type="Script" path="res://scripts/game_manager.gd" id="5_oqe03"]
-[ext_resource type="PackedScene" path="res://scenes/hud.tscn" id="6_puafc"]
-[ext_resource type="Script" path="res://scripts/touch_controls.gd" id="7_mhfwe"]
-[ext_resource type="Script" path="res://scripts/prop_spawner.gd" id="9_2assh"]
-
-[sub_resource type="PhysicsMaterial" id="PhysMat_floor"]
-friction = 6.0
-rough = true
-
-[sub_resource type="BoxShape3D" id="BoxShape3D_floor"]
-size = Vector3(80, 0.2, 80)
-
-[sub_resource type="StandardMaterial3D" id="Mat_floor"]
-albedo_color = Color(0.55, 0.4, 0.28, 1)
-
-[sub_resource type="PlaneMesh" id="PlaneMesh_floor"]
-material = SubResource("Mat_floor")
-size = Vector2(80, 80)
-
-[sub_resource type="BoxShape3D" id="BoxShape3D_wallX"]
-size = Vector3(81, 60, 0.5)
-
-[sub_resource type="StandardMaterial3D" id="Mat_wall"]
-albedo_color = Color(0.623529, 0.658824, 0.717647, 1)
-
-[sub_resource type="BoxMesh" id="BoxMesh_wallX"]
-material = SubResource("Mat_wall")
-size = Vector3(81, 3, 0.5)
-
-[sub_resource type="BoxShape3D" id="BoxShape3D_wallZ"]
-size = Vector3(0.5, 60, 81)
-
-[sub_resource type="BoxMesh" id="BoxMesh_wallZ"]
-material = SubResource("Mat_wall")
-size = Vector3(0.5, 3, 81)
+[ext_resource type="Environment" path="res://scenes/main-environment.tres" id="1_env"]
+[ext_resource type="Script" path="res://scripts/room.gd" id="2_room"]
+[ext_resource type="Script" path="res://scripts/camera_rig.gd" id="3_cam"]
+[ext_resource type="PackedScene" path="res://scenes/player.tscn" id="4_player"]
+[ext_resource type="Script" path="res://scripts/game_manager.gd" id="5_gm"]
+[ext_resource type="PackedScene" path="res://scenes/hud.tscn" id="6_hud"]
+[ext_resource type="Script" path="res://scripts/touch_controls.gd" id="7_touch"]
+[ext_resource type="Script" path="res://scripts/prop_spawner.gd" id="8_props"]
 
 [node name="Main" type="Node3D"]
 
 [node name="Environment" type="WorldEnvironment" parent="."]
-environment = ExtResource("1_yf80j")
+environment = ExtResource("1_env")
 
-[node name="Floor" type="StaticBody3D" parent="." groups=["ground"]]
-physics_material_override = SubResource("PhysMat_floor")
+[node name="Room" type="Node3D" parent="."]
+script = ExtResource("2_room")
 
-[node name="CollisionShape3D" type="CollisionShape3D" parent="Floor"]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.1, 0)
-shape = SubResource("BoxShape3D_floor")
+[node name="Sun" type="DirectionalLight3D" parent="."]
+transform = Transform3D(-0.422618, -0.694272, 0.582564, 0, 0.642788, 0.766044, -0.906308, 0.323744, -0.271654, 0, 0, 0)
+light_color = Color(1, 0.95, 0.86, 1)
+light_energy = 1.25
+shadow_enabled = true
+shadow_bias = 0.05
+shadow_normal_bias = 1.0
+shadow_opacity = 0.7
+directional_shadow_mode = 0
+directional_shadow_max_distance = 22.0
+sky_mode = 1
 
-[node name="FloorMesh" type="MeshInstance3D" parent="Floor"]
-mesh = SubResource("PlaneMesh_floor")
-
-[node name="WallNorth" type="StaticBody3D" parent="."]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.5, 40)
-script = ExtResource("2_opo2q")
-
-[node name="CollisionShape3D" type="CollisionShape3D" parent="WallNorth"]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 28.5, 0)
-shape = SubResource("BoxShape3D_wallX")
-
-[node name="MeshInstance3D" type="MeshInstance3D" parent="WallNorth"]
-mesh = SubResource("BoxMesh_wallX")
-
-[node name="WallSouth" type="StaticBody3D" parent="."]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.5, -40)
-
-[node name="CollisionShape3D" type="CollisionShape3D" parent="WallSouth"]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 28.5, 0)
-shape = SubResource("BoxShape3D_wallX")
-
-[node name="MeshInstance3D" type="MeshInstance3D" parent="WallSouth"]
-mesh = SubResource("BoxMesh_wallX")
-
-[node name="WallEast" type="StaticBody3D" parent="."]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 40, 1.5, 0)
-script = ExtResource("2_opo2q")
-wall_normal = Vector3(1, 0, 0)
-
-[node name="CollisionShape3D" type="CollisionShape3D" parent="WallEast"]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 28.5, 0)
-shape = SubResource("BoxShape3D_wallZ")
-
-[node name="MeshInstance3D" type="MeshInstance3D" parent="WallEast"]
-mesh = SubResource("BoxMesh_wallZ")
-
-[node name="WallWest" type="StaticBody3D" parent="."]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -40, 1.5, 0)
-
-[node name="CollisionShape3D" type="CollisionShape3D" parent="WallWest"]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 28.5, 0)
-shape = SubResource("BoxShape3D_wallZ")
-
-[node name="MeshInstance3D" type="MeshInstance3D" parent="WallWest"]
-mesh = SubResource("BoxMesh_wallZ")
+[node name="Player" parent="." instance=ExtResource("4_player")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.4, 0)
 
 [node name="CameraRig" type="Node3D" parent="." node_paths=PackedStringArray("target", "sun")]
-script = ExtResource("3_iv0h0")
+script = ExtResource("3_cam")
 target = NodePath("../Player")
 sun = NodePath("../Sun")
 
 [node name="Camera" type="Camera3D" parent="CameraRig"]
-transform = Transform3D(1, 0, 0, 0, 0.939693, 0.34202, 0, -0.34202, 0.939693, 0, 2.6, 5.5)
+transform = Transform3D(1, 0, 0, 0, 0.939693, 0.34202, 0, -0.34202, 0.939693, 0, 1.6, 3.2)
 current = true
-fov = 50.0
+fov = 55.0
+near = 0.03
 far = 300.0
 
-[node name="Sun" type="DirectionalLight3D" parent="."]
-transform = Transform3D(-0.422618, -0.694272, 0.582564, 0, 0.642788, 0.766044, -0.906308, 0.323744, -0.271654, 0, 0, 0)
-shadow_enabled = true
-shadow_bias = 0.2
-shadow_normal_bias = 1.0
-shadow_opacity = 0.75
-directional_shadow_mode = 0
-directional_shadow_max_distance = 26.0
-sky_mode = 1
-
-[node name="Player" parent="." instance=ExtResource("4_rt0lq")]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.6, 0)
-
 [node name="GameManager" type="Node" parent="." groups=["game_manager"]]
-script = ExtResource("5_oqe03")
-
-[node name="HUD" parent="." instance=ExtResource("6_puafc")]
-
-[node name="TouchControls" type="CanvasLayer" parent="."]
-script = ExtResource("7_mhfwe")
+script = ExtResource("5_gm")
 
 [node name="Props" type="Node3D" parent="."]
-script = ExtResource("9_2assh")
+script = ExtResource("8_props")
+
+[node name="HUD" parent="." instance=ExtResource("6_hud")]
+
+[node name="TouchControls" type="CanvasLayer" parent="."]
+script = ExtResource("7_touch")
