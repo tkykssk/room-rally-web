@@ -6,6 +6,8 @@ class_name Destructible extends Area3D
 @export var target_height: float = 1.0
 @export var target_scale: float = 0.0
 @export var base_y: float = 0.0
+## Colour for food models, whose colormap texture is missing (alpha 0 = keep).
+@export var tint: Color = Color(0, 0, 0, 0)
 
 var _manager: Node = null
 var _destroyed: bool = false
@@ -55,6 +57,8 @@ func _build() -> void:
 	if model_scene == null:
 		return
 	var model: Node3D = model_scene.instantiate()
+	if tint.a > 0.0:
+		_apply_tint(model)
 	add_child(model)
 	var aabb: = _local_aabb(model)
 	var nh: float = maxf(aabb.size.y, 0.001)
@@ -82,6 +86,21 @@ func _build() -> void:
 	_occlude_radius = 0.5 * maxf(w, d)
 	if size_tier > 0:
 		_prepare_fade(model)
+
+func _apply_tint(model: Node3D) -> void:
+	var stack: Array = [model]
+	while not stack.is_empty():
+		var n = stack.pop_back()
+		stack.append_array(n.get_children())
+		if n is MeshInstance3D and n.mesh != null:
+			for si in n.mesh.get_surface_count():
+				var m = n.mesh.surface_get_material(si)
+				if m is StandardMaterial3D and m.resource_name == "colormap":
+					var dup: StandardMaterial3D = m.duplicate()
+					dup.albedo_texture = null
+					dup.albedo_color = tint
+					dup.roughness = 0.4
+					n.set_surface_override_material(si, dup)
 
 func _prepare_fade(model: Node3D) -> void:
 	var stack: Array = [model]

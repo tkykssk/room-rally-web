@@ -47,15 +47,15 @@ const LAYOUT: = [
 ]
 
 const CLUTTER: = [
-	{"p": FOOD + "mug.glb", "t": 0, "h": 0.8, "s": 10, "c": 6},
-	{"p": FOOD + "cup.glb", "t": 0, "h": 0.7, "s": 10, "c": 6},
-	{"p": FOOD + "glass.glb", "t": 0, "h": 0.9, "s": 10, "c": 5},
-	{"p": FOOD + "soda-can.glb", "t": 0, "h": 1.0, "s": 15, "c": 6},
+	{"p": FOOD + "mug.glb", "col": Color("e8576d"), "t": 0, "h": 0.8, "s": 10, "c": 6},
+	{"p": FOOD + "cup.glb", "col": Color("f2b33d"), "t": 0, "h": 0.7, "s": 10, "c": 6},
+	{"p": FOOD + "glass.glb", "col": Color("a8d8ea"), "t": 0, "h": 0.9, "s": 10, "c": 5},
+	{"p": FOOD + "soda-can.glb", "col": Color("d9363e"), "t": 0, "h": 1.0, "s": 15, "c": 6},
 	{"p": FUR + "computerMouse.glb", "t": 0, "h": 0.5, "s": 10, "c": 5},
 	{"p": FUR + "books.glb", "t": 1, "h": 1.5, "s": 20, "c": 5},
-	{"p": FOOD + "soda-bottle.glb", "t": 1, "h": 2.0, "s": 30, "c": 4},
-	{"p": FOOD + "bottle-ketchup.glb", "t": 1, "h": 1.8, "s": 25, "c": 4},
-	{"p": FOOD + "carton.glb", "t": 1, "h": 1.7, "s": 20, "c": 4},
+	{"p": FOOD + "soda-bottle.glb", "col": Color("4fb06a"), "t": 1, "h": 2.0, "s": 30, "c": 4},
+	{"p": FOOD + "bottle-ketchup.glb", "col": Color("d23b3b"), "t": 1, "h": 1.8, "s": 25, "c": 4},
+	{"p": FOOD + "carton.glb", "col": Color("6aa8e8"), "t": 1, "h": 1.7, "s": 20, "c": 4},
 ]
 
 @export var room_half: float = 34.0
@@ -91,7 +91,7 @@ func _ready() -> void:
 			continue
 		for i in it.c:
 			var pos: = _find_spot(rng, placed, clutter_sep)
-			_spawn(scene2, it.t, it.h, it.s, Vector3(pos.x, 0.0, pos.y), rng.randf() * TAU)
+			_spawn(scene2, it.t, it.h, it.s, Vector3(pos.x, 0.0, pos.y), rng.randf() * TAU, 0.0, it.get("col", Color(0, 0, 0, 0)))
 			placed.append({"pos": pos, "sep": clutter_sep})
 	_warmup_shaders()
 
@@ -144,8 +144,9 @@ func _make_transparent(node: Node3D) -> void:
 					dup.albedo_color = col
 					n.set_surface_override_material(si, dup)
 
-func _spawn(scene: PackedScene, t: int, h: float, s: int, pos: Vector3, rot_y: float, sc: float = 0.0) -> void:
+func _spawn(scene: PackedScene, t: int, h: float, s: int, pos: Vector3, rot_y: float, sc: float = 0.0, tint: Color = Color(0, 0, 0, 0)) -> void:
 	var p: Destructible = PROP.instantiate()
+	p.tint = tint
 	p.model_scene = scene
 	p.size_tier = t
 	p.score_value = s
