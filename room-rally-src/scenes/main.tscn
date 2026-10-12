@@ -7,7 +7,6 @@
 [ext_resource type="Script" path="res://scripts/game_manager.gd" id="5_oqe03"]
 [ext_resource type="PackedScene" path="res://scenes/hud.tscn" id="6_puafc"]
 [ext_resource type="Script" path="res://scripts/touch_controls.gd" id="7_mhfwe"]
-[ext_resource type="Script" path="res://scripts/perf_probe.gd" id="8_sengj"]
 [ext_resource type="Script" path="res://scripts/prop_spawner.gd" id="9_2assh"]
 
 [sub_resource type="PhysicsMaterial" id="PhysMat_floor"]
@@ -126,9 +125,6 @@ game_duration = 999.0
 
 [node name="TouchControls" type="CanvasLayer" parent="." unique_id=997354193]
 script = ExtResource("7_mhfwe")
-
-[node name="PerfProbe" type="Node" parent="." unique_id=1773253005]
-script = ExtResource("8_sengj")
 
 [node name="Props" type="Node3D" parent="." unique_id=827287123]
 script = ExtResource("9_2assh")
