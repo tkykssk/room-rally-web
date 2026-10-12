@@ -18,6 +18,10 @@ func _ready() -> void:
 	_make_cam_button()
 	get_viewport().size_changed.connect(_layout)
 	_layout()
+	var gm: = get_tree().get_first_node_in_group("game_manager")
+	if gm and gm.has_signal("state_changed"):
+		gm.state_changed.connect(func(s: int): visible = s == gm.State.PLAYING)
+		visible = gm.state == gm.State.PLAYING
 
 func _make_cam_button() -> void:
 	var cam: = Button.new()
@@ -26,9 +30,9 @@ func _make_cam_button() -> void:
 	cam.anchor_left = 1.0
 	cam.anchor_right = 1.0
 	cam.offset_left = -150.0
-	cam.offset_top = 90.0
+	cam.offset_top = 112.0
 	cam.offset_right = -24.0
-	cam.offset_bottom = 138.0
+	cam.offset_bottom = 160.0
 	cam.add_theme_font_size_override("font_size", 24)
 	cam.pressed.connect(_on_cam_toggle)
 	add_child(cam)

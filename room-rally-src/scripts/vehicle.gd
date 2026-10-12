@@ -57,6 +57,7 @@ var linear_velocity: Vector3
 var prev_position: Vector3
 
 var calculated_lean: float
+var _gm: Node = null
 
 func get_vehicle_position() -> Vector3: return vehicle_model.global_position
 func get_heading_yaw() -> float: return vehicle_model.global_rotation.y
@@ -64,6 +65,7 @@ func get_heading_yaw() -> float: return vehicle_model.global_rotation.y
 func _ready() -> void:
 	add_to_group("vehicle")
 	var gm: = get_tree().get_first_node_in_group("game_manager")
+	_gm = gm
 	if gm and gm.has_signal("tier_unlocked"):
 		gm.tier_unlocked.connect(_on_tier_unlocked)
 	_build_smasher()
@@ -133,7 +135,10 @@ func _physics_process(delta):
 				a.try_smash()
 
 func handle_input(delta):
-	if raycast.is_colliding():
+	if _gm and not _gm.is_playing():
+		input.x = 0.0
+		input.z = 0.0
+	elif raycast.is_colliding():
 		input.x = Input.get_axis("left", "right")
 		input.z = Input.get_axis("back", "forward")
 	sphere.angular_velocity += vehicle_model.get_global_transform().basis.x * (linear_speed * roll_force * size_scale) * delta
