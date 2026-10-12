@@ -1,7 +1,7 @@
 [gd_scene format=3]
 
 [ext_resource type="Environment" path="res://scenes/main-environment.tres" id="1_yf80j"]
-[ext_resource type="Script" path="res://scripts/drop_wall.gd" id="2_opo2q"]
+[ext_resource type="Script" path="res://scripts/room.gd" id="2_room"]
 [ext_resource type="Script" path="res://scripts/view.gd" id="3_iv0h0"]
 [ext_resource type="PackedScene" path="res://scenes/vehicle.tscn" id="4_rt0lq"]
 [ext_resource type="Script" path="res://scripts/game_manager.gd" id="5_oqe03"]
@@ -9,90 +9,13 @@
 [ext_resource type="Script" path="res://scripts/touch_controls.gd" id="7_mhfwe"]
 [ext_resource type="Script" path="res://scripts/prop_spawner.gd" id="9_2assh"]
 
-[sub_resource type="PhysicsMaterial" id="PhysMat_floor"]
-friction = 6.0
-rough = true
-
-[sub_resource type="BoxShape3D" id="BoxShape3D_floor"]
-size = Vector3(80, 0.2, 80)
-
-[sub_resource type="StandardMaterial3D" id="Mat_floor"]
-albedo_color = Color(0.55, 0.4, 0.28, 1)
-
-[sub_resource type="PlaneMesh" id="PlaneMesh_floor"]
-material = SubResource("Mat_floor")
-size = Vector2(80, 80)
-
-[sub_resource type="BoxShape3D" id="BoxShape3D_wallX"]
-size = Vector3(81, 3, 0.5)
-
-[sub_resource type="StandardMaterial3D" id="Mat_wall"]
-albedo_color = Color(0.623529, 0.658824, 0.717647, 1)
-
-[sub_resource type="BoxMesh" id="BoxMesh_wallX"]
-material = SubResource("Mat_wall")
-size = Vector3(81, 3, 0.5)
-
-[sub_resource type="BoxShape3D" id="BoxShape3D_wallZ"]
-size = Vector3(0.5, 3, 81)
-
-[sub_resource type="BoxMesh" id="BoxMesh_wallZ"]
-material = SubResource("Mat_wall")
-size = Vector3(0.5, 3, 81)
-
 [node name="Main" type="Node3D" unique_id=1021786882]
 
 [node name="Environment" type="WorldEnvironment" parent="." unique_id=1420181849]
 environment = ExtResource("1_yf80j")
 
-[node name="Floor" type="StaticBody3D" parent="." unique_id=667743160]
-physics_material_override = SubResource("PhysMat_floor")
-
-[node name="CollisionShape3D" type="CollisionShape3D" parent="Floor" unique_id=1476817641]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.1, 0)
-shape = SubResource("BoxShape3D_floor")
-
-[node name="FloorMesh" type="MeshInstance3D" parent="Floor" unique_id=719698653]
-mesh = SubResource("PlaneMesh_floor")
-
-[node name="WallNorth" type="StaticBody3D" parent="." unique_id=99393673]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.5, 40)
-script = ExtResource("2_opo2q")
-
-[node name="CollisionShape3D" type="CollisionShape3D" parent="WallNorth" unique_id=309501729]
-shape = SubResource("BoxShape3D_wallX")
-
-[node name="MeshInstance3D" type="MeshInstance3D" parent="WallNorth" unique_id=1618284156]
-mesh = SubResource("BoxMesh_wallX")
-
-[node name="WallSouth" type="StaticBody3D" parent="." unique_id=2121492612]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.5, -40)
-
-[node name="CollisionShape3D" type="CollisionShape3D" parent="WallSouth" unique_id=2140846082]
-shape = SubResource("BoxShape3D_wallX")
-
-[node name="MeshInstance3D" type="MeshInstance3D" parent="WallSouth" unique_id=1607124843]
-mesh = SubResource("BoxMesh_wallX")
-
-[node name="WallEast" type="StaticBody3D" parent="." unique_id=1059210976]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 40, 1.5, 0)
-script = ExtResource("2_opo2q")
-wall_normal = Vector3(1, 0, 0)
-
-[node name="CollisionShape3D" type="CollisionShape3D" parent="WallEast" unique_id=1512848583]
-shape = SubResource("BoxShape3D_wallZ")
-
-[node name="MeshInstance3D" type="MeshInstance3D" parent="WallEast" unique_id=1911855127]
-mesh = SubResource("BoxMesh_wallZ")
-
-[node name="WallWest" type="StaticBody3D" parent="." unique_id=1599533194]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -40, 1.5, 0)
-
-[node name="CollisionShape3D" type="CollisionShape3D" parent="WallWest" unique_id=916149360]
-shape = SubResource("BoxShape3D_wallZ")
-
-[node name="MeshInstance3D" type="MeshInstance3D" parent="WallWest" unique_id=271113549]
-mesh = SubResource("BoxMesh_wallZ")
+[node name="Room" type="Node3D" parent="." unique_id=55501]
+script = ExtResource("2_room")
 
 [node name="View" type="Node3D" parent="." unique_id=142833765 node_paths=PackedStringArray("target")]
 transform = Transform3D(0.707107, -0.40558, 0.579228, 0, 0.819152, 0.573576, -0.707107, -0.40558, 0.579228, 0, 0, 0)

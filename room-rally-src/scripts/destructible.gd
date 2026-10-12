@@ -30,11 +30,21 @@ static func _get_debris_mesh() -> Mesh:
 		var m: = BoxMesh.new()
 		m.size = Vector3(0.5, 0.5, 0.5)
 		var mat: = StandardMaterial3D.new()
-		mat.albedo_color = Color(1.0, 0.85, 0.2)
-		mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		mat.vertex_color_use_as_albedo = true
+		mat.roughness = 0.6
 		m.material = mat
 		_debris_mesh_shared = m
 	return _debris_mesh_shared
+
+## Confetti-coloured debris so a smash reads as a reward, not a crash.
+static var _debris_colors: Gradient = null
+static func _get_debris_colors() -> Gradient:
+	if _debris_colors == null:
+		_debris_colors = Gradient.new()
+		_debris_colors.offsets = PackedFloat32Array([0.0, 0.25, 0.5, 0.75, 1.0])
+		_debris_colors.colors = PackedColorArray([Color("ffd23f"), Color("ff5c8a"), Color("3fd0c9"), Color("8ad24f"), Color("ff8a3c")])
+		_debris_colors.interpolation_mode = Gradient.GRADIENT_INTERPOLATE_CONSTANT
+	return _debris_colors
 
 func _ready() -> void:
 	collision_layer = 2
@@ -57,8 +67,7 @@ func _build() -> void:
 	if model_scene == null:
 		return
 	var model: Node3D = model_scene.instantiate()
-	if tint.a > 0.0:
-		_apply_tint(model)
+	Palette.apply(model, randi() % Palette.FABRIC.size(), tint)
 	add_child(model)
 	var aabb: = _local_aabb(model)
 	var nh: float = maxf(aabb.size.y, 0.001)
@@ -86,21 +95,6 @@ func _build() -> void:
 	_occlude_radius = 0.5 * maxf(w, d)
 	if size_tier > 0:
 		_prepare_fade(model)
-
-func _apply_tint(model: Node3D) -> void:
-	var stack: Array = [model]
-	while not stack.is_empty():
-		var n = stack.pop_back()
-		stack.append_array(n.get_children())
-		if n is MeshInstance3D and n.mesh != null:
-			for si in n.mesh.get_surface_count():
-				var m = n.mesh.surface_get_material(si)
-				if m is StandardMaterial3D and m.resource_name == "colormap":
-					var dup: StandardMaterial3D = m.duplicate()
-					dup.albedo_texture = null
-					dup.albedo_color = tint
-					dup.roughness = 0.4
-					n.set_surface_override_material(si, dup)
 
 func _prepare_fade(model: Node3D) -> void:
 	var stack: Array = [model]
@@ -174,6 +168,7 @@ func _destroy() -> void:
 	_destroyed = true
 	if _manager and _manager.has_method("add_score"):
 		_manager.add_score(score_value)
+		_manager.report_smash(global_position + Vector3(0, target_height, 0), score_value, target_height)
 	_spawn_effect(global_position, target_height)
 	queue_free()
 
@@ -188,6 +183,9 @@ func _spawn_effect(pos: Vector3, h: float) -> void:
 	fx.amount = clampi(int(h * 6.0), 8, 32)
 	fx.lifetime = 0.5
 	fx.mesh = _get_debris_mesh()
+	fx.color_initial_ramp = _get_debris_colors()
+	fx.angular_velocity_min = -360.0
+	fx.angular_velocity_max = 360.0
 	fx.direction = Vector3(0, 1, 0)
 	fx.spread = 60.0
 	fx.initial_velocity_min = 2.0 + h
@@ -204,7 +202,10 @@ func _spawn_effect(pos: Vector3, h: float) -> void:
 	sfx.stream = IMPACT_SFX
 	host.add_child(sfx)
 	sfx.global_position = pos
+	sfx.pitch_scale = clampf(1.5 - h * 0.08, 0.6, 1.4)
 	sfx.play()
+	if h >= 3.0:
+		Audio.play("pop", clampf(1.3 - h * 0.05, 0.7, 1.2), -6.0)
 	sfx.finished.connect(sfx.queue_free)
 
 func _local_aabb(root: Node3D) -> AABB:

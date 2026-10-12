@@ -8,6 +8,7 @@ func _ready() -> void:
 	if model_scene == null:
 		return
 	var m: Node3D = model_scene.instantiate()
+	Palette.apply(m, randi() % Palette.FABRIC.size())
 	add_child(m)
 	var a: = _local_aabb(m)
 	var sx: float = target_width / maxf(a.size.x, 0.001)

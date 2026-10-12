@@ -41,6 +41,13 @@ func _ready() -> void:
 	var gm: = get_tree().get_first_node_in_group("game_manager")
 	if gm and gm.has_signal("tier_unlocked"):
 		gm.tier_unlocked.connect(_on_tier_unlocked)
+	if gm and gm.has_signal("smashed"):
+		gm.smashed.connect(_on_smashed)
+
+var _shake: float = 0.0
+
+func _on_smashed(_pos: Vector3, _points: int, height: float) -> void:
+	_shake = maxf(_shake, clampf(height * 0.04, 0.03, 0.4))
 
 func _on_tier_unlocked(_tier: int) -> void:
 	zoom_offset += zoom_per_tier
@@ -80,4 +87,7 @@ func _physics_process(delta: float) -> void:
 	var scl: float = sqrt(maxf(target.size_scale, 1.0))
 	var target_pos: = Vector3(0.0, h * _zoom * scl, b * _zoom * scl)
 	camera.position = camera.position.lerp(target_pos, delta * cam_lerp)
+	if _shake > 0.002:
+		camera.position += Vector3(randf_range(-1, 1), randf_range(-1, 1), 0.0) * _shake * scl
+		_shake = lerpf(_shake, 0.0, clampf(delta * 9.0, 0.0, 1.0))
 	camera.rotation.x = lerp_angle(camera.rotation.x, deg_to_rad(p), delta * cam_lerp)
