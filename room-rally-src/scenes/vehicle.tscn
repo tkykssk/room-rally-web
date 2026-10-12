@@ -27,7 +27,6 @@ colors = PackedColorArray(1, 1, 1, 0.8, 1, 1, 1, 0)
 
 [sub_resource type="PhysicsMaterial" id="PhysicsMaterial_eyo0u"]
 friction = 5.0
-rough = true
 
 [sub_resource type="SphereShape3D" id="SphereShape3D_hhncp"]
 

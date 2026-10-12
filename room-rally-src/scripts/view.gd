@@ -43,6 +43,8 @@ func _ready() -> void:
 		gm.tier_unlocked.connect(_on_tier_unlocked)
 	if gm and gm.has_signal("smashed"):
 		gm.smashed.connect(_on_smashed)
+	if target and target.has_signal("bumped"):
+		target.bumped.connect(func(k: float): _shake = maxf(_shake, 0.06 + 0.12 * k))
 
 var _shake: float = 0.0
 
@@ -86,7 +88,21 @@ func _physics_process(delta: float) -> void:
 		p = over_pitch_deg
 	var scl: float = sqrt(maxf(target.size_scale, 1.0))
 	var target_pos: = Vector3(0.0, h * _zoom * scl, b * _zoom * scl)
-	camera.position = camera.position.lerp(target_pos, delta * cam_lerp)
+	# Spring arm: if a wall is between the truck and the camera's spot, move
+	# the camera in front of it. Furniture fades instead (see Destructible).
+	var follow: = delta * cam_lerp
+	var from: = global_position + Vector3(0.0, 0.6 * scl, 0.0)
+	var want: = to_global(target_pos)
+	var q: = PhysicsRayQueryParameters3D.create(from, want, 4)
+	if target.get("sphere"):
+		q.exclude = [target.sphere.get_rid()]
+	var hit: = get_world_3d().direct_space_state.intersect_ray(q)
+	if not hit.is_empty():
+		var dist: = from.distance_to(hit.position)
+		var safe: = from + (want - from).normalized() * maxf(dist - 0.6, 0.8)
+		target_pos = to_local(safe)
+		follow = delta * cam_lerp * 4.0
+	camera.position = camera.position.lerp(target_pos, clampf(follow, 0.0, 1.0))
 	if _shake > 0.002:
 		camera.position += Vector3(randf_range(-1, 1), randf_range(-1, 1), 0.0) * _shake * scl
 		_shake = lerpf(_shake, 0.0, clampf(delta * 9.0, 0.0, 1.0))

@@ -1,5 +1,8 @@
 class_name Vehicle extends Node3D
 
+## Bumped into something solid; strength 0..1 (for camera shake).
+signal bumped(strength: float)
+
 @export_group("Tuning")
 
 @export var steering_strength: float = 5.0
@@ -19,6 +22,10 @@ class_name Vehicle extends Node3D
 @onready var raycast: RayCast3D = $Ground
 
 var size_scale: float = 1.0
+## Scale applied to the physics ball. It follows size_scale so a grown truck
+## collides at its visible size instead of sinking into furniture.
+var phys_scale: float = 1.0
+const BASE_RADIUS: = 0.5
 const BASE_MODEL_OFFSET: = 0.65
 const MODEL_GROUND_LIFT: = 0.15
 const GROW_PER_TIER: = 1.5
@@ -68,7 +75,14 @@ func _ready() -> void:
 	_gm = gm
 	if gm and gm.has_signal("tier_unlocked"):
 		gm.tier_unlocked.connect(_on_tier_unlocked)
+	var cs: CollisionShape3D = sphere.get_node("CollisionShape")
+	cs.shape = cs.shape.duplicate()
+	_ball_shape = cs.shape
 	_build_smasher()
+
+var _ball_shape: SphereShape3D = null
+var _bump_ready_at: int = 0
+var _phys_tween: Tween = null
 
 func _build_smasher() -> void:
 	_smasher = Area3D.new()
@@ -93,6 +107,22 @@ func set_size_scale(s: float) -> void:
 		tw.tween_property(model_root, "position:y", MODEL_GROUND_LIFT * (s - 1.0), 0.3)
 	if _smash_shape:
 		_smash_shape.radius = SMASH_BASE_RADIUS * s
+	# One resize at a time: overlapping tweens (several tier-ups in one
+	# frame) fought over phys_scale and kept re-lifting the ball.
+	if _phys_tween:
+		_phys_tween.kill()
+	_phys_tween = create_tween()
+	_phys_tween.tween_method(_set_phys_scale, phys_scale, s, 0.3)
+
+func _set_phys_scale(k: float) -> void:
+	# Lift the ball by the radius it gains so it doesn't sink into the floor.
+	var dr: = BASE_RADIUS * (k - phys_scale)
+	phys_scale = k
+	if _ball_shape:
+		_ball_shape.radius = BASE_RADIUS * k
+	if dr > 0.0:
+		sphere.global_position += Vector3(0, dr, 0)
+	raycast.target_position = Vector3(0, -(BASE_RADIUS * k + 0.2), 0)
 
 func _physics_process(delta):
 	handle_input(delta)
@@ -120,7 +150,7 @@ func _physics_process(delta):
 		else:
 			linear_speed = lerp(linear_speed, target_speed, delta * accel_rate)
 	acceleration = lerpf(acceleration, linear_speed + (abs(sphere.angular_velocity.length() * linear_speed) / 100), delta * 1)
-	vehicle_model.position = sphere.position - Vector3(0, BASE_MODEL_OFFSET, 0)
+	vehicle_model.position = sphere.position - Vector3(0, BASE_MODEL_OFFSET + BASE_RADIUS * (phys_scale - 1.0), 0)
 	raycast.position = sphere.position
 	linear_velocity = (vehicle_model.position - prev_position) / delta
 	prev_position = vehicle_model.position
@@ -141,7 +171,9 @@ func handle_input(delta):
 	elif raycast.is_colliding():
 		input.x = Input.get_axis("left", "right")
 		input.z = Input.get_axis("back", "forward")
-	sphere.angular_velocity += vehicle_model.get_global_transform().basis.x * (linear_speed * roll_force * size_scale) * delta
+	# Ground speed = spin x radius; the ball's radius already grows with the
+	# truck, so the spin target doesn't need the size multiplier as well.
+	sphere.angular_velocity += vehicle_model.get_global_transform().basis.x * (linear_speed * roll_force * size_scale / phys_scale) * delta
 
 func effect_body(delta):
 	calculated_lean = lerp_angle(calculated_lean,-input.x / 5 * linear_speed, delta * 5)
@@ -182,8 +214,16 @@ func align_with_y(xform, new_y):
 	xform.basis = xform.basis.orthonormalized()
 	return xform
 
-func _on_sphere_body_entered(_body: Node) -> void:
+func _on_sphere_body_entered(body: Node) -> void:
 	if vehicle_body == null: return
+	# A solid obstacle (not the floor): lose most of the speed and nudge back,
+	# rather than keep driving into it.
+	if body is StaticBody3D and not body.is_in_group("ground") and Time.get_ticks_msec() >= _bump_ready_at:
+		var hit: = clampf(absf(linear_speed), 0.0, 1.0)
+		if hit > 0.25:
+			_bump_ready_at = Time.get_ticks_msec() + 250
+			linear_speed *= 0.25
+			bumped.emit(hit)
 	if not impact_sound.playing:
 		var impact_velocity: = absf(linear_velocity.dot(vehicle_body.global_basis.z))
 		impact_sound.volume_db = clampf(remap(impact_velocity, 0.0, 6.0, -20.0, 0.0), -20.0, 0.0)
