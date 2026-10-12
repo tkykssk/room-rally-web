@@ -15,10 +15,14 @@ const WALL_SHADER: = preload("res://scenes/wallpaper.gdshader")
 var _walls: Array = []
 
 func _ready() -> void:
+	var stage: = Stages.get_stage()
+	half_size = stage.half
 	_build_floor()
 	var white: = _mat(Color("f7f2ea"))
 	var wall_mat: = ShaderMaterial.new()
 	wall_mat.shader = WALL_SHADER
+	wall_mat.set_shader_parameter("base_color", stage.wall)
+	wall_mat.set_shader_parameter("stripe_color", stage.stripe)
 	# North (kitchen) and east (bedroom) get windows, south the front door.
 	_build_wall(Vector3(0, 0, half_size), Vector3(0, 0, -1), white, wall_mat, [
 		{"type": "window", "x": -26.0}, {"type": "window", "x": 22.0}])
@@ -85,7 +89,10 @@ func _build_wall(origin: Vector3, normal: Vector3, trim: Material, paper: Materi
 	_box(visual, Vector3(length, wall_height, 0.5), Vector3(0, wall_height * 0.5, -0.25), paper)
 	_box(visual, Vector3(length, 0.7, 0.3), Vector3(0, 0.35, 0.1), trim)
 	_box(visual, Vector3(length, 0.35, 0.2), Vector3(0, wall_height - 0.18, 0.05), trim)
+	var k: = half_size / 40.0
 	for f in features:
+		f = f.duplicate()
+		f.x *= k
 		match f.type:
 			"window":
 				_box(visual, Vector3(9.0, 6.5, 0.4), Vector3(f.x, 6.6, 0.1), trim)

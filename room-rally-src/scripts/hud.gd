@@ -27,7 +27,11 @@ var _result: Control
 var _result_score: Label
 var _result_tier: Label
 var _result_best: Label
-var _blink_label: Label
+var _result_stars: Array = []
+var _next_btn: Button
+var _result_bonus: Label
+var _result_title: Label
+var _goal_label: Label
 
 func _ready() -> void:
 	_gm = get_tree().get_first_node_in_group("game_manager")
@@ -43,6 +47,7 @@ func _ready() -> void:
 	_gm.tier_unlocked.connect(_on_tier_unlocked)
 	_gm.game_over.connect(_on_game_over)
 	_gm.smashed.connect(_on_smashed)
+	_gm.room_cleared.connect(_on_room_cleared)
 	_on_state_changed(_gm.state)
 	_on_score_changed(_gm.score)
 	_on_time_changed(_gm.time_left)
@@ -53,19 +58,10 @@ func _on_state_changed(state: int) -> void:
 	_pause.visible = state == _gm.State.PAUSED
 	_result.visible = state == _gm.State.RESULT
 
-func _input(event: InputEvent) -> void:
-	if _gm == null or _gm.state != _gm.State.TITLE:
-		return
-	var go: bool = (event is InputEventKey and event.pressed and not event.echo) \
-		or (event is InputEventMouseButton and event.pressed) \
-		or (event is InputEventScreenTouch and event.pressed) \
-		or (event is InputEventJoypadButton and event.pressed)
-	if go:
-		_gm.start()
-
-func _process(_delta: float) -> void:
-	if _title.visible:
-		_blink_label.modulate.a = 0.55 + 0.45 * sin(Time.get_ticks_msec() / 260.0)
+func _unhandled_input(event: InputEvent) -> void:
+	if _gm and _gm.state == _gm.State.TITLE and event is InputEventKey and event.pressed \
+			and (event.keycode == KEY_ENTER or event.keycode == KEY_SPACE):
+		_gm.play_stage(Stages.current)
 
 # --- HUD events -------------------------------------------------------------
 
@@ -76,6 +72,11 @@ func _on_score_changed(s: int) -> void:
 	_tier_label.text = "TIER %d" % tier if next < 0 else "TIER %d  →  %d" % [tier, next]
 	var prev: int = 0 if tier == 0 else _gm.tier_thresholds[tier - 1]
 	_tier_bar.value = 1.0 if next < 0 else clampf(float(s - prev) / float(next - prev), 0.0, 1.0)
+	var stars: int = _gm.stars_for(s)
+	if _gm.star_goals.is_empty():
+		_goal_label.text = ""
+	else:
+		_goal_label.text = "ALL STARS!" if stars >= _gm.star_goals.size() else "Star %d at %d" % [stars + 1, _gm.star_goals[stars]]
 
 func _on_time_changed(t: float) -> void:
 	var s: = int(ceilf(t))
@@ -99,6 +100,10 @@ func _on_tier_unlocked(tier: int) -> void:
 	_banner_tween.tween_property(_banner, "modulate:a", 0.0, 0.35)
 	_banner_tween.parallel().tween_property(_banner_sub, "modulate:a", 0.0, 0.35)
 
+func _on_room_cleared(bonus: int) -> void:
+	_result_bonus.text = "ROOM CLEARED!  Time bonus +%d" % bonus
+	_result_bonus.visible = true
+
 ## "+120" rising from the smashed prop.
 func _on_smashed(world_pos: Vector3, points: int, height: float) -> void:
 	var cam: = get_viewport().get_camera_3d()
@@ -114,6 +119,17 @@ func _on_smashed(world_pos: Vector3, points: int, height: float) -> void:
 
 func _on_game_over(final_score: int) -> void:
 	_result_score.text = "%d" % final_score
+	_result_title.text = "CLEARED!" if _gm.props_left <= 0 else "TIME UP!"
+	var stars: int = _gm.stars_for(final_score)
+	for i in _result_stars.size():
+		var star: StarIcon = _result_stars[i]
+		star.filled = i < stars
+		star.queue_redraw()
+		star.scale = Vector2.ZERO
+		var tw: = create_tween()
+		tw.tween_interval(0.4 + 0.25 * i)
+		tw.tween_property(star, "scale", Vector2.ONE, 0.3).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	_next_btn.visible = _gm.has_next_stage()
 	_result_tier.text = "Reached TIER %d" % _gm.unlocked_tier
 	var new_best: bool = final_score >= _gm.best_score and final_score > 0
 	_result_best.text = ("NEW BEST!  %d" if new_best else "BEST  %d") % _gm.best_score
@@ -134,7 +150,7 @@ func _build_hud() -> void:
 	var box: = VBoxContainer.new()
 	box.add_theme_constant_override("separation", 2)
 	panel.add_child(box)
-	box.add_child(_label("SCORE", 20, INK.lightened(0.3)))
+	box.add_child(_label(Stages.get_stage().name.to_upper() + "  •  SCORE", 20, INK.lightened(0.3)))
 	_score_label = _label("0", 54, INK)
 	box.add_child(_score_label)
 	_tier_bar = ProgressBar.new()
@@ -152,6 +168,8 @@ func _build_hud() -> void:
 	box.add_child(_tier_bar)
 	_tier_label = _label("TIER 0", 20, INK.lightened(0.2))
 	box.add_child(_tier_label)
+	_goal_label = _label("", 20, PINK)
+	box.add_child(_goal_label)
 	_time_panel = _panel()
 	_time_panel.set_anchors_preset(Control.PRESET_TOP_RIGHT)
 	_time_panel.offset_left = -220
@@ -182,24 +200,50 @@ func _build_hud() -> void:
 
 func _build_title() -> void:
 	_title = _overlay(Color(0.15, 0.08, 0.2, 0.5))
-	var box: = _centered_box(_title, 14)
-	var title: = _label("ROOM RALLY", 108, Color.WHITE, 24)
+	var box: = _centered_box(_title, 12)
+	var title: = _label("ROOM RALLY", 100, Color.WHITE, 24)
 	title.add_theme_color_override("font_outline_color", PINK)
 	box.add_child(title)
-	box.add_child(_label("Smash the room. Grow your truck!", 34, Color.WHITE, 10))
-	var card: = _panel()
-	card.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
-	box.add_child(card)
-	var inner: = VBoxContainer.new()
-	inner.add_theme_constant_override("separation", 6)
-	card.add_child(inner)
-	inner.add_child(_label("Crash into things to score. Every TIER makes your truck bigger.", 24, INK))
-	inner.add_child(_label("WASD / Arrow keys to drive   •   C: camera   •   Esc: pause", 22, INK.lightened(0.3)))
-	if _gm and _gm.best_score > 0:
-		inner.add_child(_label("BEST  %d" % _gm.best_score, 26, PINK))
-	_blink_label = _label("Click or tap to start", 40, Color.WHITE, 10)
-	box.add_child(_blink_label)
+	box.add_child(_label("Smash the room. Grow your truck!", 32, Color.WHITE, 10))
+	var row: = HBoxContainer.new()
+	row.alignment = BoxContainer.ALIGNMENT_CENTER
+	row.add_theme_constant_override("separation", 18)
+	box.add_child(row)
+	for i in Stages.count():
+		row.add_child(_stage_card(i))
+	box.add_child(_label("Drive: WASD / Arrows / touch buttons   •   C: camera   •   P: pause", 22, Color.WHITE, 8))
 	_credit(_title)
+
+func _stage_card(i: int) -> Control:
+	var st: Dictionary = Stages.get_stage(i)
+	var unlocked: bool = _gm == null or _gm.is_unlocked(i)
+	var rec: Dictionary = _gm.record(i) if _gm else {"best": 0, "stars": 0}
+	var b: = _button("", 1, Vector2(250, 190), PINK if unlocked else Color("8a7fa0"))
+	b.disabled = not unlocked
+	b.add_theme_stylebox_override("disabled", b.get_theme_stylebox("normal"))
+	b.pressed.connect(func(): _gm.play_stage(i))
+	var v: = VBoxContainer.new()
+	v.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	v.alignment = BoxContainer.ALIGNMENT_CENTER
+	v.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	b.add_child(v)
+	v.add_child(_label("STAGE %d" % (i + 1), 20, Color(1, 1, 1, 0.85)))
+	v.add_child(_label(st.name, 34, Color.WHITE, 6))
+	var stars: = HBoxContainer.new()
+	stars.alignment = BoxContainer.ALIGNMENT_CENTER
+	stars.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	for k in 3:
+		var star: = StarIcon.new()
+		star.filled = k < rec.stars
+		star.custom_minimum_size = Vector2(30, 30)
+		stars.add_child(star)
+	v.add_child(stars)
+	var info: String = ("BEST %d" % rec.best) if unlocked else "Get 1 star in stage %d" % i
+	v.add_child(_label(info, 18, Color.WHITE))
+	v.add_child(_label("%d:%02d" % [int(st.time) / 60, int(st.time) % 60] if unlocked else "LOCKED", 18, Color(1, 1, 1, 0.8)))
+	for c in v.get_children():
+		c.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	return b
 
 func _build_pause() -> void:
 	_pause = _overlay(Color(0.1, 0.05, 0.15, 0.55))
@@ -212,16 +256,20 @@ func _build_pause() -> void:
 	resume.pressed.connect(func(): _gm.resume())
 	box.add_child(resume)
 	var retry: = _button("RESTART", 30, Vector2(260, 64), Color("8a7fa0"))
+	var quit: = _button("STAGES", 30, Vector2(260, 64), Color("8a7fa0"))
+	quit.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	quit.pressed.connect(func(): _gm.to_stage_select())
 	retry.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 	retry.pressed.connect(func(): _gm.restart())
 	box.add_child(retry)
+	box.add_child(quit)
 
 func _build_result() -> void:
 	_result = _overlay(Color(0.12, 0.06, 0.18, 0.6))
 	var box: = _centered_box(_result, 12)
-	var t: = _label("TIME UP!", 92, Color.WHITE, 18)
-	t.add_theme_color_override("font_outline_color", PINK)
-	box.add_child(t)
+	_result_title = _label("TIME UP!", 92, Color.WHITE, 18)
+	_result_title.add_theme_color_override("font_outline_color", PINK)
+	box.add_child(_result_title)
 	var card: = _panel()
 	card.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 	card.custom_minimum_size = Vector2(480, 0)
@@ -232,14 +280,36 @@ func _build_result() -> void:
 	inner.add_child(_label("SCORE", 26, INK.lightened(0.3)))
 	_result_score = _label("0", 88, INK)
 	inner.add_child(_result_score)
+	var stars: = HBoxContainer.new()
+	stars.alignment = BoxContainer.ALIGNMENT_CENTER
+	stars.add_theme_constant_override("separation", 14)
+	inner.add_child(stars)
+	for i in 3:
+		var star: = StarIcon.new()
+		star.custom_minimum_size = Vector2(64, 64)
+		star.pivot_offset = Vector2(32, 32)
+		stars.add_child(star)
+		_result_stars.append(star)
 	_result_tier = _label("", 28, INK)
 	inner.add_child(_result_tier)
+	_result_bonus = _label("", 26, Color("3fae6a"))
+	_result_bonus.visible = false
+	inner.add_child(_result_bonus)
 	_result_best = _label("", 30, INK)
 	inner.add_child(_result_best)
-	var retry: = _button("PLAY AGAIN", 38, Vector2(320, 80))
-	retry.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	var buttons: = HBoxContainer.new()
+	buttons.alignment = BoxContainer.ALIGNMENT_CENTER
+	buttons.add_theme_constant_override("separation", 16)
+	box.add_child(buttons)
+	var stages_btn: = _button("STAGES", 30, Vector2(200, 72), Color("8a7fa0"))
+	stages_btn.pressed.connect(func(): _gm.to_stage_select())
+	buttons.add_child(stages_btn)
+	var retry: = _button("RETRY", 34, Vector2(200, 72))
 	retry.pressed.connect(func(): _gm.restart())
-	box.add_child(retry)
+	buttons.add_child(retry)
+	_next_btn = _button("NEXT STAGE", 34, Vector2(250, 72), Color("3fae6a"))
+	_next_btn.pressed.connect(func(): _gm.next_stage())
+	buttons.add_child(_next_btn)
 	_credit(_result)
 
 # --- widgets ----------------------------------------------------------------
@@ -328,3 +398,19 @@ func _credit(parent: Control) -> void:
 	l.offset_top = -36
 	l.offset_bottom = -10
 	parent.add_child(l)
+
+
+## Five-point star, gold when filled.
+class StarIcon extends Control:
+	var filled: bool = false
+
+	func _draw() -> void:
+		var c: = size * 0.5
+		var r: = minf(size.x, size.y) * 0.5
+		var pts: = PackedVector2Array()
+		for i in 10:
+			var a: = -PI / 2.0 + i * PI / 5.0
+			pts.append(c + Vector2(cos(a), sin(a)) * (r if i % 2 == 0 else r * 0.45))
+		draw_colored_polygon(pts, Color("ffc93c") if filled else Color(1, 1, 1, 0.35))
+		pts.append(pts[0])
+		draw_polyline(pts, Color("3b2a4a"), maxf(1.5, r * 0.08), true)

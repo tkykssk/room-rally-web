@@ -1,6 +1,8 @@
 class_name Destructible extends Area3D
 
 @export var model_scene: PackedScene
+## Ready-made model (procedural toys) used instead of model_scene.
+var model_node: Node3D = null
 @export var size_tier: int = 0
 @export var score_value: int = 10
 @export var target_height: float = 1.0
@@ -12,6 +14,8 @@ class_name Destructible extends Area3D
 var _manager: Node = null
 var _destroyed: bool = false
 var _solid: StaticBody3D = null
+## Radius of a circle covering the footprint (used to keep clutter out from under furniture).
+var footprint_radius: float = 0.0
 
 const OCCLUDED_ALPHA: = 0.1
 const FADE_SPEED: = 12.0
@@ -64,9 +68,9 @@ func is_destroyable() -> bool:
 	return size_tier <= _manager.unlocked_tier
 
 func _build() -> void:
-	if model_scene == null:
+	if model_scene == null and model_node == null:
 		return
-	var model: Node3D = model_scene.instantiate()
+	var model: Node3D = model_node if model_node else model_scene.instantiate()
 	Palette.apply(model, randi() % Palette.FABRIC.size(), tint)
 	add_child(model)
 	var aabb: = _local_aabb(model)
@@ -77,6 +81,8 @@ func _build() -> void:
 	var w: float = maxf(aabb.size.x * s, 0.2)
 	var d: float = maxf(aabb.size.z * s, 0.2)
 	var hgt: float = aabb.size.y * s
+	footprint_radius = 0.5 * Vector2(w, d).length() + Vector2(
+		(aabb.position.x + aabb.size.x * 0.5) * s, (aabb.position.z + aabb.size.z * 0.5) * s).length()
 	var box: = BoxShape3D.new()
 	box.size = Vector3(w, hgt, d)
 	var cx: = (aabb.position.x + aabb.size.x * 0.5) * s
