@@ -29,6 +29,8 @@ var hx: float = 40.0
 var hz: float = 40.0
 var _walls: Array = []
 var _inner: Array = []
+## Walls that give way once the truck is far bigger than they are (journey).
+var _breakables: Array = []
 var _fade_timer: float = 0.0
 var _floor_mat: PhysicsMaterial = null
 var _vehicle: Node = null
@@ -47,11 +49,53 @@ func _ready() -> void:
 		_build_floor()
 		_build_room_shell(stage, trim)
 	for w in stage.get("walls", []):
-		_build_inner_wall(w, stage.get("inner_wall", Color("e9dcc6")), trim)
+		if w.get("fence", false):
+			_build_fence_line(w, stage.get("fence", Color("f4ead8")))
+		else:
+			_build_inner_wall(w, stage.get("inner_wall", Color("e9dcc6")), trim)
 	for p in stage.get("platforms", []):
 		_build_platform(p)
 	for r in stage.get("ramps", []):
 		_build_ramp(r)
+	if not _breakables.is_empty():
+		var gm: = get_tree().get_first_node_in_group("game_manager")
+		if gm:
+			gm.tier_unlocked.connect(_on_tier_unlocked)
+
+func _on_tier_unlocked(tier: int) -> void:
+	for w in _breakables.duplicate():
+		if tier >= w.tier:
+			_breakables.erase(w)
+			_crumble(w)
+
+## The wall bursts into confetti debris and is gone.
+func _crumble(w: Dictionary) -> void:
+	if w.inner != null:
+		_inner.erase(w.inner)
+	var a: Vector2 = w.a
+	var b: Vector2 = w.b
+	var n: = clampi(int(a.distance_to(b) / 12.0), 1, 6)
+	for i in n:
+		var p: = a.lerp(b, (i + 0.5) / n)
+		var fx: = CPUParticles3D.new()
+		fx.one_shot = true
+		fx.explosiveness = 1.0
+		fx.amount = 16
+		fx.lifetime = 0.8
+		fx.mesh = Destructible._get_debris_mesh()
+		fx.color_initial_ramp = Destructible._get_debris_colors()
+		fx.direction = Vector3.UP
+		fx.spread = 70.0
+		fx.initial_velocity_min = 6.0
+		fx.initial_velocity_max = 14.0
+		fx.scale_amount_min = 1.2
+		fx.scale_amount_max = 2.0
+		add_child(fx)
+		fx.position = Vector3(p.x, w.h * 0.5, p.y)
+		fx.emitting = true
+		get_tree().create_timer(1.2).timeout.connect(fx.queue_free)
+	Audio.play("smash", 0.6, 4.0)
+	w.node.queue_free()
 
 func _build_room_shell(stage: Dictionary, trim: Material) -> void:
 	var paper: = ShaderMaterial.new()
@@ -95,9 +139,9 @@ func _build_outdoor(stage: Dictionary) -> void:
 	add_child(body)
 	var cs: = CollisionShape3D.new()
 	var shape: = BoxShape3D.new()
-	shape.size = Vector3(hx * 2.0, 0.2, hz * 2.0)
+	shape.size = Vector3(hx * 2.0 + 120.0, 2.0, hz * 2.0 + 120.0)
 	cs.shape = shape
-	cs.position.y = -0.1
+	cs.position.y = -1.0
 	body.add_child(cs)
 	var lawn: = ShaderMaterial.new()
 	lawn.shader = LAWN_SHADER
@@ -105,11 +149,31 @@ func _build_outdoor(stage: Dictionary) -> void:
 	var layer: = 0
 	for f in stage.get("floors", []):
 		layer += 1
-		var r: Array = f.rect
-		var size: = Vector2(absf(r[2] - r[0]), absf(r[3] - r[1]))
-		var pos: = Vector3((r[0] + r[2]) * 0.5, 0.01 + layer * 0.004, (r[1] + r[3]) * 0.5)
+		# Patches with a "layer" sit at fixed heights (ground, lots, roads,
+		# markings); otherwise each is a little above the previous one.
+		var y: = 0.01 + float(f.layer) * 0.08 if f.has("layer") else 0.01 + layer * 0.004
+		var size: Vector2
+		var pos: Vector3
+		var yaw: = 0.0
+		if f.has("seg"):
+			# A strip along a segment (roads at any angle): {seg: [x0, z0, x1, z1], w}
+			var sg: Array = f.seg
+			var a: = Vector2(sg[0], sg[1])
+			var b: = Vector2(sg[2], sg[3])
+			size = Vector2(a.distance_to(b), f.w)
+			pos = Vector3((a.x + b.x) * 0.5, y, (a.y + b.y) * 0.5)
+			yaw = -atan2(b.y - a.y, b.x - a.x)
+		else:
+			var r: Array = f.rect
+			size = Vector2(absf(r[2] - r[0]), absf(r[3] - r[1]))
+			pos = Vector3((r[0] + r[2]) * 0.5, y, (r[1] + r[3]) * 0.5)
+			yaw = deg_to_rad(f.get("rot", 0.0))
 		var m: Material
-		if f.get("kind", "") == "planks":
+		if f.get("kind", "") == "lawn":
+			var lm: = ShaderMaterial.new()
+			lm.shader = LAWN_SHADER
+			m = lm
+		elif f.get("kind", "") == "planks":
 			var sm: = ShaderMaterial.new()
 			sm.shader = FLOOR_SHADER
 			if f.has("a"):
@@ -117,19 +181,31 @@ func _build_outdoor(stage: Dictionary) -> void:
 				sm.set_shader_parameter("wood_b", f.b)
 			m = sm
 		else:
-			m = _mat(f.get("color", Color("d8cdb8")))
-		_plane(size, pos, m)
+			m = _patch_mat(f.get("color", Color("d8cdb8")))
+		_plane(size, pos, m, yaw)
 	_build_fence(stage.get("fence", Color("f4ead8")))
 	_build_scenery()
 
-func _plane(size: Vector2, pos: Vector3, m: Material) -> void:
+func _plane(size: Vector2, pos: Vector3, m: Material, yaw: float = 0.0) -> void:
 	var mi: = MeshInstance3D.new()
 	var plane: = PlaneMesh.new()
 	plane.size = size
 	plane.material = m
 	mi.mesh = plane
 	mi.position = pos
+	mi.rotation.y = yaw
+	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(mi)
+
+## One material per patch colour (a town has many patches).
+var _patch_mats: = {}
+func _patch_mat(c: Color) -> Material:
+	if not _patch_mats.has(c):
+		# Flat colours read too bright next to the shaded floors; tone down.
+		var m: = _mat(c.darkened(0.18))
+		m.roughness = 1.0
+		_patch_mats[c] = m
+	return _patch_mats[c]
 
 ## Picket fence around the yard, with a tall invisible collider so a fully
 ## grown truck can't get over it. It is low, so the camera ignores it.
@@ -147,9 +223,13 @@ func _build_fence(color: Color) -> void:
 		var cs: = CollisionShape3D.new()
 		var shape: = BoxShape3D.new()
 		var length: = half * 2.0 + 2.0
-		shape.size = Vector3(length, 60.0, 1.0) if along_x else Vector3(1.0, 60.0, length)
+		# Thick and tall: a grown truck is fast and big enough to tunnel
+		# through (or climb) a thin wall.
+		var thick: = 40.0
+		var wall_len: = length + thick * 2.0
+		shape.size = Vector3(wall_len, 200.0, thick) if along_x else Vector3(thick, 200.0, wall_len)
 		cs.shape = shape
-		cs.position = origin + Vector3(0, 30.0, 0) + (Vector3(0, 0, sgn * 0.5) if along_x else Vector3(sgn * 0.5, 0, 0))
+		cs.position = origin + Vector3(0, 100.0, 0) + (Vector3(0, 0, sgn * thick * 0.5) if along_x else Vector3(sgn * thick * 0.5, 0, 0))
 		body.add_child(cs)
 		# Two rails plus pickets (one mesh per picket is fine: ~100 per side
 		# would not be, so pickets are 1.5 apart and share one material).
@@ -170,6 +250,80 @@ func _build_fence(color: Color) -> void:
 		var mmi: = MultiMeshInstance3D.new()
 		mmi.multimesh = mm
 		add_child(mmi)
+
+## A picket fence inside the map (the yard fence), with gaps for gates. It is
+## only "h" tall, so once the truck is much bigger it rolls right over it.
+func _build_fence_line(w: Dictionary, color: Color) -> void:
+	var a: = Vector2(w.from[0], w.from[1])
+	var b: = Vector2(w.to[0], w.to[1])
+	var length: = a.distance_to(b)
+	var dir: = (b - a) / length
+	var h: float = w.get("h", FENCE_HEIGHT)
+	var cuts: Array = []
+	for d in w.get("doors", []):
+		cuts.append([d[0] - d[1] * 0.5, d[0] + d[1] * 0.5])
+	cuts.sort_custom(func(p, q): return p[0] < q[0])
+	var spans: Array = []
+	var t: = 0.0
+	for c in cuts:
+		if c[0] > t:
+			spans.append([t, c[0]])
+		t = c[1]
+	if t < length:
+		spans.append([t, length])
+	var block: bool = w.get("style", "") == "block"
+	var paint: = _mat(Color("b9b6ae") if block else color)
+	var pivot: = Node3D.new()
+	pivot.transform = Transform3D(Basis(Vector3(dir.x, 0, dir.y), Vector3.UP, Vector3(-dir.y, 0, dir.x)), Vector3(a.x, 0, a.y))
+	add_child(pivot)
+	var body: = StaticBody3D.new()
+	body.physics_material_override = Destructible.obstacle_material()
+	pivot.add_child(body)
+	if block:
+		# A concrete block wall (the kind around Japanese house lots).
+		for sp in spans:
+			var len: float = sp[1] - sp[0]
+			var mid: float = (sp[0] + sp[1]) * 0.5
+			var cs: = CollisionShape3D.new()
+			var shape: = BoxShape3D.new()
+			shape.size = Vector3(len, h, 0.8)
+			cs.shape = shape
+			cs.position = Vector3(mid, h * 0.5, 0)
+			body.add_child(cs)
+			_box(pivot, Vector3(len, h, 0.8), Vector3(mid, h * 0.5, 0), paint)
+			_box(pivot, Vector3(len, 0.25, 1.0), Vector3(mid, h + 0.12, 0), _patch_mat(Color("a29f97")))
+		if w.has("break_tier"):
+			_breakables.append({"tier": int(w.break_tier), "node": pivot, "a": a, "b": b, "h": h, "inner": null})
+		return
+	var picket: = BoxMesh.new()
+	picket.size = Vector3(0.7, h, 0.14)
+	picket.material = paint
+	var xfs: Array = []
+	for sp in spans:
+		var len: float = sp[1] - sp[0]
+		var mid: float = (sp[0] + sp[1]) * 0.5
+		var cs: = CollisionShape3D.new()
+		var shape: = BoxShape3D.new()
+		shape.size = Vector3(len, h, 0.5)
+		cs.shape = shape
+		cs.position = Vector3(mid, h * 0.5, 0)
+		body.add_child(cs)
+		_box(pivot, Vector3(len, 0.25, 0.16), Vector3(mid, h * 0.3, 0), paint)
+		_box(pivot, Vector3(len, 0.25, 0.16), Vector3(mid, h * 0.72, 0), paint)
+		var n: = int(len / 1.4)
+		for i in n:
+			xfs.append(Transform3D(Basis(), Vector3(sp[0] + (i + 0.5) * len / n, h * 0.5, 0)))
+	var mm: = MultiMesh.new()
+	mm.transform_format = MultiMesh.TRANSFORM_3D
+	mm.mesh = picket
+	mm.instance_count = xfs.size()
+	for i in xfs.size():
+		mm.set_instance_transform(i, xfs[i])
+	var mmi: = MultiMeshInstance3D.new()
+	mmi.multimesh = mm
+	pivot.add_child(mmi)
+	if w.has("break_tier"):
+		_breakables.append({"tier": int(w.break_tier), "node": pivot, "a": a, "b": b, "h": h, "inner": null})
 
 ## Trees and neighbours' houses beyond the fence (no collision).
 func _build_scenery() -> void:
@@ -337,7 +491,10 @@ func _build_inner_wall(w: Dictionary, color: Color, trim: Material) -> void:
 		_box(pivot, size, center, mat)
 		if y0 == 0.0:
 			_box(pivot, Vector3(len, 0.7, 0.8), Vector3(center.x, 0.35, 0.0), trim_mat)
-	_inner.append({"a": a, "b": b, "h": h, "mats": [mat, trim_mat], "alpha": 1.0, "target": 1.0})
+	var entry: = {"a": a, "b": b, "h": h, "mats": [mat, trim_mat], "alpha": 1.0, "target": 1.0}
+	_inner.append(entry)
+	if w.has("break_tier"):
+		_breakables.append({"tier": int(w.break_tier), "node": pivot, "a": a, "b": b, "h": h, "inner": entry})
 
 ## Fade an interior wall while it sits between the camera and the truck.
 func _fade_inner_walls(cam: Camera3D, delta: float) -> void:

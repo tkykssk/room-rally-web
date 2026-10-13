@@ -51,8 +51,30 @@ var _shake: float = 0.0
 func _on_smashed(_pos: Vector3, _points: int, height: float) -> void:
 	_shake = maxf(_shake, clampf(height * 0.04, 0.03, 0.4))
 
-func _on_tier_unlocked(_tier: int) -> void:
+func _on_tier_unlocked(tier: int) -> void:
 	zoom_offset += zoom_per_tier
+	# A grown truck sees further: keep the far plane and the sun's shadow
+	# range in step with its size (the journey grows it ~40x).
+	var k: = sqrt(pow(Vehicle.GROW_PER_TIER, tier))
+	camera.far = maxf(300.0, 300.0 * k)
+	var sun: = get_tree().current_scene.get_node_or_null("Sun") as DirectionalLight3D if get_tree().current_scene else null
+	if sun:
+		if _sun_base < 0.0:
+			_sun_base = sun.directional_shadow_max_distance
+		# Capped: a huge shadow range costs a lot on big tiers for little gain.
+		sun.directional_shadow_max_distance = _sun_base * clampf(k, 1.0, 3.0)
+
+var _sun_base: = -1.0
+
+## Camera distance for a truck of size `s`: sqrt up to tier 6 (as in the
+## challenge stages), then pulling back faster so a giant truck (journey,
+## up to ~38x) doesn't fill the screen.
+static func _cam_scale(s: float) -> float:
+	const KNEE: = 11.39
+	s = maxf(s, 1.0)
+	if s <= KNEE:
+		return sqrt(s)
+	return sqrt(KNEE) * pow(s / KNEE, 0.85)
 
 func toggle_mode() -> void:
 	mode = Mode.OVERHEAD if mode == Mode.CHASE else Mode.CHASE
@@ -86,7 +108,7 @@ func _physics_process(delta: float) -> void:
 		h = over_height
 		b = over_back
 		p = over_pitch_deg
-	var scl: float = sqrt(maxf(target.size_scale, 1.0))
+	var scl: = _cam_scale(target.size_scale)
 	var target_pos: = Vector3(0.0, h * _zoom * scl, b * _zoom * scl)
 	# Spring arm: if a wall is between the truck and the camera's spot, move
 	# the camera in front of it. Furniture fades instead (see Destructible).

@@ -11,6 +11,8 @@ signal state_changed(state: int)
 signal room_cleared(bonus: int)
 ## A prop was destroyed (for score popups and camera shake).
 signal smashed(world_pos: Vector3, points: int, height: float)
+## Journey: seconds added for growing a tier.
+signal time_bonus(seconds: float)
 
 enum State {TITLE, PLAYING, PAUSED, RESULT}
 
@@ -32,6 +34,7 @@ var _last_shown_time: int = -1
 var total_points: int = 0
 var props_left: int = 0
 var clear_bonus: int = 0
+var cleared: = false
 const CLEAR_BONUS_PER_SECOND: = 20
 
 var stage: Dictionary
@@ -134,6 +137,15 @@ func _process(delta: float) -> void:
 func set_stage_props(count: int, points: int, points_by_tier: Dictionary = {}) -> void:
 	props_left = count
 	total_points = points
+	var st: Dictionary = Stages.get_stage()
+	if st.has("tier_thresholds"):
+		# Journey: the world appears zone by zone, so goals are set by hand.
+		tier_thresholds.clear()
+		for v in st.tier_thresholds:
+			tier_thresholds.append(int(v))
+		star_goals = st.star_scores.duplicate()
+		score_changed.emit(score)
+		return
 	if not points_by_tier.is_empty():
 		tier_thresholds.clear()
 		var prev: = 0
@@ -158,17 +170,35 @@ func add_score(amount: int) -> void:
 	props_left -= 1
 	score_changed.emit(score)
 	_check_unlock()
-	if props_left <= 0:
+	if props_left <= 0 and not is_journey():
 		# Everything smashed: end early, remaining time becomes bonus points.
+		cleared = true
 		clear_bonus = int(ceilf(time_left)) * CLEAR_BONUS_PER_SECOND
 		score += clear_bonus
 		score_changed.emit(score)
 		room_cleared.emit(clear_bonus)
 		_finish()
 
+## Journey: everything in the world has been smashed.
+func world_cleared() -> void:
+	if not playing or cleared:
+		return
+	cleared = true
+	clear_bonus = int(ceilf(time_left)) * CLEAR_BONUS_PER_SECOND
+	score += clear_bonus
+	score_changed.emit(score)
+	room_cleared.emit(clear_bonus)
+	_finish()
+
 func _check_unlock() -> void:
 	while unlocked_tier < tier_thresholds.size() and score >= tier_thresholds[unlocked_tier]:
 		unlocked_tier += 1
+		# Journey: growing buys time, so a good run keeps going.
+		var bonus: Array = stage.get("tier_time", [])
+		if unlocked_tier - 1 < bonus.size():
+			time_left += float(bonus[unlocked_tier - 1])
+			time_bonus.emit(float(bonus[unlocked_tier - 1]))
+			time_changed.emit(time_left)
 		tier_unlocked.emit(unlocked_tier)
 		Audio.play("tier_up")
 
@@ -187,22 +217,34 @@ func stars_for(value: int) -> int:
 			n += 1
 	return n
 
+## Records are keyed by stage name, so adding a stage keeps old saves valid.
 func record(i: int) -> Dictionary:
-	return records.get(i, {"best": 0, "stars": 0})
+	return records.get(Stages.get_stage(i).name, {"best": 0, "stars": 0, "tier": 0})
 
-## A stage is open once the previous one has at least one star.
+func is_journey(i: int = -1) -> bool:
+	return Stages.get_stage(i).get("journey", false)
+
+## The journey and the first challenge are always open; each later challenge
+## opens once the previous one has at least one star.
 func is_unlocked(i: int) -> bool:
-	return i == 0 or record(i - 1).stars >= 1
+	if is_journey(i) or i == 0:
+		return true
+	if is_journey(i - 1):
+		return true
+	return record(i - 1).stars >= 1
 
 func has_next_stage() -> bool:
+	if is_journey():
+		return false
 	return Stages.current + 1 < Stages.count() and is_unlocked(Stages.current + 1)
 
 func _finish() -> void:
 	var stars: = stars_for(score)
 	var rec: Dictionary = record(Stages.current)
 	var new_best: bool = score > rec.best
-	if new_best or stars > rec.stars:
-		records[Stages.current] = {"best": maxi(score, rec.best), "stars": maxi(stars, rec.stars)}
+	if new_best or stars > rec.stars or unlocked_tier > rec.get("tier", 0):
+		records[stage.name] = {"best": maxi(score, rec.best), "stars": maxi(stars, rec.stars),
+			"tier": maxi(unlocked_tier, rec.get("tier", 0))}
 		_save_records()
 	best_score = record(Stages.current).best
 	CG.gameplay_stop()
@@ -235,10 +277,10 @@ func _load_records() -> Dictionary:
 	var cfg: = ConfigFile.new()
 	if cfg.load(SAVE_PATH) != OK:
 		return {}
-	return cfg.get_value("records", "stages", {})
+	return cfg.get_value("records", "by_name", {})
 
 func _save_records() -> void:
 	var cfg: = ConfigFile.new()
 	cfg.load(SAVE_PATH)
-	cfg.set_value("records", "stages", records)
+	cfg.set_value("records", "by_name", records)
 	cfg.save(SAVE_PATH)

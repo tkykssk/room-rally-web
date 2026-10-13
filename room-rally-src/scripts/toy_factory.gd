@@ -25,6 +25,13 @@ const KINDS: = {
 	"bench": "Garden Bench", "doghouse": "Doghouse", "parasol": "Parasol",
 	"pool": "Paddling Pool", "lamppost": "Lamp Post", "tree": "Tree",
 	"pine": "Pine Tree", "shed": "Garden Shed",
+	# street
+	"sedan": "Car", "van": "Van", "bus": "Bus", "house": "House", "trafficcone": "Traffic Cone",
+	"bicycle": "Bicycle", "fountain": "Fountain", "gate": "Garden Gate",
+	"trafficlight": "Traffic Light",
+	"apartment": "Apartment", "shop": "Corner Shop", "utilitypole": "Utility Pole",
+	"vending": "Vending Machine", "torii": "Torii Gate", "shrine": "Shrine", "slide": "Slide",
+	"swing": "Swing", "ac": "Air Conditioner", "bikerack": "Parked Bikes",
 }
 
 const BRIGHT: = [
@@ -365,6 +372,169 @@ static func _build(kind: String, v: int) -> ArrayMesh:
 			b.add(_roof(), Vector3(0, 3.8, 0), Color("6b4a2b"), Vector3.ZERO, Vector3(4.6, 1.6, 3.6))
 			b.box(Vector3(1.4, 2.2, 0.05), Vector3(-0.6, 1.1, 1.61), Color("8a5a35"))
 			b.box(Vector3(0.9, 0.7, 0.05), Vector3(1.1, 1.8, 1.61), Color("bfe6ff"))
+		# --- street ---------------------------------------------------------
+		"sedan":
+			var body: = _c(v, 1)
+			b.box(Vector3(4.2, 0.9, 1.9), Vector3(0, 0.75, 0), body)
+			b.box(Vector3(2.3, 0.8, 1.7), Vector3(-0.2, 1.55, 0), body.lightened(0.1))
+			b.box(Vector3(2.0, 0.6, 1.72), Vector3(-0.2, 1.55, 0), Color("bfe6ff"))
+			b.box(Vector3(2.32, 0.6, 1.5), Vector3(-0.2, 1.55, 0), Color("bfe6ff"))
+			for x in [-1.35, 1.35]:
+				for z in [-0.85, 0.85]:
+					b.cyl(0.4, 0.3, Vector3(x, 0.4, z), Color("2d2f36"), 12, Vector3(90, 0, 0))
+			for z in [-0.6, 0.6]:
+				b.box(Vector3(0.05, 0.22, 0.4), Vector3(2.1, 0.85, z), Color("fff2b0"))
+		"van":
+			var vb: = _c(v, 2).lightened(0.2)
+			b.box(Vector3(4.8, 2.0, 2.0), Vector3(0, 1.4, 0), vb)
+			b.box(Vector3(0.05, 0.8, 1.7), Vector3(2.41, 1.9, 0), Color("bfe6ff"))
+			b.box(Vector3(3.2, 0.6, 2.02), Vector3(-0.6, 1.95, 0), Color("bfe6ff"))
+			b.box(Vector3(4.82, 0.25, 2.02), Vector3(0, 1.0, 0), vb.darkened(0.25))
+			for x in [-1.5, 1.5]:
+				for z in [-0.9, 0.9]:
+					b.cyl(0.45, 0.32, Vector3(x, 0.45, z), Color("2d2f36"), 12, Vector3(90, 0, 0))
+		"bus":
+			b.box(Vector3(10.0, 2.6, 2.5), Vector3(0, 1.85, 0), Color("f2b33d"))
+			b.box(Vector3(9.0, 0.8, 2.52), Vector3(-0.3, 2.35, 0), Color("bfe6ff"))
+			b.box(Vector3(0.05, 1.2, 2.1), Vector3(5.01, 2.2, 0), Color("bfe6ff"))
+			b.box(Vector3(10.02, 0.2, 2.52), Vector3(0, 1.35, 0), Color("2d2f36"))
+			for x in [-3.4, 3.4]:
+				for z in [-1.15, 1.15]:
+					b.cyl(0.55, 0.35, Vector3(x, 0.55, z), Color("2d2f36"), 12, Vector3(90, 0, 0))
+		"house":
+			# Four kinds of house, each in five colour schemes.
+			var wall: Color = [Color("f4ead8"), Color("e8d3b0"), Color("cfe0e8"), Color("f0d0c8"), Color("dfe8c8")][v % 5]
+			var roofc: Color = [Color("c45a4a"), Color("4a6fc4"), Color("6b4a2b"), Color("4f8a5a"), Color("5a5f6b")][(v + 2) % 5]
+			match v % 4:
+				0:  # two storeys, gable roof
+					b.box(Vector3(10.0, 6.0, 8.0), Vector3(0, 3.0, 0), wall)
+					b.add(_roof(), Vector3(0, 8.0, 0), roofc, Vector3(0, 90, 0), Vector3(9.0, 4.0, 11.0))
+					b.box(Vector3(0.9, 2.2, 0.9), Vector3(2.8, 8.6, -1.5), Color("a8463d"))
+				1:  # hip roof, wider
+					b.box(Vector3(11.0, 5.6, 9.0), Vector3(0, 2.8, 0), wall)
+					var hip: = CylinderMesh.new()
+					hip.top_radius = 1.2
+					hip.bottom_radius = 8.2
+					hip.height = 3.2
+					hip.radial_segments = 4
+					hip.rings = 1
+					b.add(hip, Vector3(0, 7.2, 0), roofc, Vector3(0, 45, 0), Vector3(1.0, 1.0, 0.82))
+				2:  # modern, flat roof with a balcony
+					b.box(Vector3(10.0, 6.4, 8.0), Vector3(0, 3.2, 0), wall.lightened(0.2))
+					b.box(Vector3(10.4, 0.4, 8.4), Vector3(0, 6.6, 0), Color("5a5f6b"))
+					b.box(Vector3(6.0, 0.25, 1.6), Vector3(-1.0, 3.3, 4.8), Color("9a9a96"))
+					b.box(Vector3(6.0, 1.1, 0.1), Vector3(-1.0, 3.9, 5.55), Color("f4f1e8"))
+				_:  # narrow, three storeys
+					b.box(Vector3(7.0, 8.4, 8.0), Vector3(0, 4.2, 0), wall)
+					b.add(_roof(), Vector3(0, 9.9, 0), roofc, Vector3(0, 90, 0), Vector3(9.0, 3.0, 7.8))
+			b.box(Vector3(1.6, 3.0, 0.1), Vector3(-1.5, 1.5, 4.05), Color("a8683f"))
+			for x in [-3.2, 2.4]:
+				b.box(Vector3(1.8, 1.4, 0.1), Vector3(x * 0.8, 4.6, 4.05), Color("bfe6ff"))
+				b.box(Vector3(1.8, 1.4, 0.1), Vector3(x * 0.8, 4.6, -4.05), Color("bfe6ff"))
+			b.box(Vector3(1.8, 1.4, 0.1), Vector3(2.4, 1.8, 4.05), Color("bfe6ff"))
+		"apartment":
+			# A three/four-storey block of flats with balconies on the front.
+			var floors: = 3 + v % 2
+			var fh: = 2.8
+			var aw: Color = [Color("efe8dc"), Color("d9d2c4"), Color("e6dccb"), Color("cfd6d8")][v % 4]
+			b.box(Vector3(16.0, floors * fh, 7.0), Vector3(0, floors * fh * 0.5, 0), aw)
+			b.box(Vector3(16.4, 0.4, 7.4), Vector3(0, floors * fh + 0.2, 0), Color("8a8a86"))
+			for i in floors:
+				var y: = i * fh
+				b.box(Vector3(15.6, 0.2, 1.2), Vector3(0, y + 0.3, 4.1), Color("b8b2a6"))
+				b.box(Vector3(15.6, 0.9, 0.1), Vector3(0, y + 0.8, 4.7), Color("f4f1e8"))
+				for k in 4:
+					b.box(Vector3(2.4, 1.6, 0.1), Vector3(-5.7 + k * 3.8, y + 1.5, 3.55), Color("9fc6dc"))
+					b.box(Vector3(2.0, 1.2, 0.1), Vector3(-5.7 + k * 3.8, y + 1.6, -3.55), Color("9fc6dc"))
+			b.box(Vector3(2.4, floors * fh + 1.2, 2.6), Vector3(8.6, (floors * fh + 1.2) * 0.5, -1.6), aw.darkened(0.08))
+		"shop":
+			# A corner shop / convenience store: glass front and a coloured band.
+			var band: Color = [Color("3fae6a"), Color("e8576d"), Color("3f7fd1"), Color("f08a3c")][v % 4]
+			b.box(Vector3(14.0, 4.6, 10.0), Vector3(0, 2.3, 0), Color("f4f1e8"))
+			b.box(Vector3(14.2, 1.0, 10.2), Vector3(0, 4.1, 0), band)
+			b.box(Vector3(14.22, 0.25, 10.22), Vector3(0, 3.5, 0), Color("ffffff"))
+			b.box(Vector3(10.0, 2.6, 0.1), Vector3(-1.0, 1.4, 5.05), Color("bfe6ff"))
+			b.box(Vector3(2.0, 2.6, 0.12), Vector3(4.8, 1.4, 5.06), Color("8fb8cf"))
+			b.box(Vector3(3.0, 0.4, 3.0), Vector3(-3.0, 4.9, -2.0), Color("9a9a96"))
+		"utilitypole":
+			b.cyl(0.2, 12.0, Vector3(0, 6.0, 0), Color("9a958c"), 8)
+			b.box(Vector3(2.6, 0.18, 0.18), Vector3(0, 11.0, 0), Color("6b6b66"))
+			b.box(Vector3(2.0, 0.18, 0.18), Vector3(0, 10.0, 0), Color("6b6b66"))
+			b.cyl(0.38, 1.1, Vector3(0.45, 8.6, 0.3), Color("8a8f94"), 10)
+			for x in [-1.1, 0.0, 1.1]:
+				b.cyl(0.07, 0.3, Vector3(x, 11.25, 0), Color("ffffff"), 6)
+		"vending":
+			var vc: Color = [Color("e8463d"), Color("3f7fd1"), Color("f4f1e8"), Color("3fae6a")][v % 4]
+			b.box(Vector3(1.0, 1.8, 0.7), Vector3(0, 0.9, 0), vc)
+			b.box(Vector3(0.8, 0.7, 0.05), Vector3(0, 1.3, 0.36), Color("dceef6"))
+			for i in 6:
+				b.box(Vector3(0.1, 0.14, 0.06), Vector3(-0.3 + (i % 3) * 0.3, 0.95 - (i / 3) * 0.12, 0.37), _c(v, i))
+			b.box(Vector3(0.6, 0.2, 0.05), Vector3(0, 0.35, 0.36), Color("2d2f36"))
+		"torii":
+			for x in [-2.0, 2.0]:
+				b.cyl(0.22, 4.4, Vector3(x, 2.2, 0), Color("d9452e"), 10)
+			b.box(Vector3(5.6, 0.35, 0.5), Vector3(0, 4.45, 0), Color("2d2f36"))
+			b.box(Vector3(5.0, 0.3, 0.4), Vector3(0, 4.15, 0), Color("d9452e"))
+			b.box(Vector3(4.6, 0.25, 0.3), Vector3(0, 3.5, 0), Color("d9452e"))
+		"shrine":
+			b.box(Vector3(6.0, 0.6, 5.0), Vector3(0, 0.3, 0), Color("b0a690"))
+			b.box(Vector3(4.6, 2.6, 3.6), Vector3(0, 1.9, 0), Color("a8683f"))
+			b.add(_roof(), Vector3(0, 4.0, 0), Color("4a4f5a"), Vector3(0, 90, 0), Vector3(5.2, 1.8, 6.2))
+			b.box(Vector3(2.2, 1.8, 0.1), Vector3(0, 1.7, 1.85), Color("3a2a20"))
+			b.box(Vector3(1.2, 0.5, 0.6), Vector3(0, 0.85, 2.6), Color("6b4a2b"))
+		"slide":
+			b.box(Vector3(1.4, 2.4, 1.4), Vector3(-1.6, 1.2, 0), _c(v, 2))
+			b.box(Vector3(3.6, 0.15, 1.0), Vector3(0.6, 1.2, 0), _c(v, 0))
+			b.add(_roof(), Vector3(-1.6, 2.8, 0), _c(v, 4), Vector3.ZERO, Vector3(1.6, 0.8, 1.6))
+		"swing":
+			for x in [-1.8, 1.8]:
+				b.cyl(0.08, 3.2, Vector3(x, 1.6, 0.8), Color("3f7fd1"), 6, Vector3(14, 0, 0))
+				b.cyl(0.08, 3.2, Vector3(x, 1.6, -0.8), Color("3f7fd1"), 6, Vector3(-14, 0, 0))
+			b.cyl(0.08, 3.8, Vector3(0, 3.1, 0), Color("3f7fd1"), 6, Vector3(0, 0, 90))
+			for x in [-0.8, 0.8]:
+				b.cyl(0.02, 2.2, Vector3(x, 2.0, 0), Color("9a9a96"), 4)
+				b.box(Vector3(0.6, 0.08, 0.35), Vector3(x, 0.9, 0), _c(v, 1))
+		"ac":
+			b.box(Vector3(1.6, 1.0, 0.6), Vector3(0, 0.5, 0), Color("ecebe6"))
+			b.cyl(0.36, 0.05, Vector3(0.3, 0.5, 0.31), Color("9a9a96"), 12, Vector3(90, 0, 0))
+		"bikerack":
+			for i in 3:
+				var cx: = -1.2 + i * 1.2
+				b.torus(0.36, 0.42, Vector3(cx, 0.42, -0.6), Color("2d2f36"), Vector3.ONE, Vector3(0, 90, 90))
+				b.torus(0.36, 0.42, Vector3(cx, 0.42, 0.6), Color("2d2f36"), Vector3.ONE, Vector3(0, 90, 90))
+				b.cyl(0.04, 1.2, Vector3(cx, 0.7, 0), _c(v, i), 6, Vector3(90, 0, 0))
+		"trafficcone":
+			b.box(Vector3(0.9, 0.08, 0.9), Vector3(0, 0.04, 0), Color("f08a3c"))
+			b.cone(0.38, 1.1, Vector3(0, 0.6, 0), Color("f08a3c"))
+			b.cyl(0.25, 0.14, Vector3(0, 0.62, 0), Color("ffffff"), 10)
+		"bicycle":
+			for x in [-0.8, 0.8]:
+				b.torus(0.42, 0.5, Vector3(x, 0.5, 0), Color("2d2f36"), Vector3.ONE, Vector3(90, 0, 0))
+			var fc: = _c(v, 3)
+			b.cyl(0.04, 1.6, Vector3(0, 0.75, 0), fc, 6, Vector3(0, 0, 90))
+			b.cyl(0.04, 0.9, Vector3(-0.35, 0.75, 0), fc, 6, Vector3(0, 0, 40))
+			b.cyl(0.04, 0.9, Vector3(0.45, 0.8, 0), fc, 6, Vector3(0, 0, -20))
+			b.box(Vector3(0.35, 0.08, 0.16), Vector3(-0.55, 1.15, 0), Color("2d2f36"))
+			b.cyl(0.03, 0.6, Vector3(0.75, 1.2, 0), Color("9a9a96"), 6, Vector3(90, 0, 0))
+		"fountain":
+			b.torus(2.4, 2.9, Vector3(0, 0.35, 0), Color("cfc7b8"), Vector3(1, 1.6, 1))
+			b.cyl(2.5, 0.5, Vector3(0, 0.3, 0), Color("6ecbe8"), 20)
+			b.cyl(0.4, 2.2, Vector3(0, 1.4, 0), Color("cfc7b8"), 10)
+			b.cyl(1.1, 0.3, Vector3(0, 2.5, 0), Color("cfc7b8"), 14)
+			b.cyl(0.9, 0.12, Vector3(0, 2.62, 0), Color("6ecbe8"), 14)
+			b.sphere(0.35, Vector3(0, 3.0, 0), Color("bfe6ff"), 8, Vector3(1, 1.5, 1))
+		"gate":
+			for x in [-2.35, 2.35]:
+				b.box(Vector3(0.25, 1.6, 0.25), Vector3(x, 0.8, 0), Color("b9875a"))
+			for y in [0.4, 1.15]:
+				b.box(Vector3(4.6, 0.12, 0.1), Vector3(0, y, 0), Color("f4ead8"))
+			for i in 13:
+				b.box(Vector3(0.2, 1.45, 0.08), Vector3(-2.1 + i * 0.35, 0.75, 0.06), Color("f4ead8"))
+		"trafficlight":
+			b.cyl(0.12, 4.0, Vector3(0, 2.0, 0), Color("2d2f36"), 8)
+			b.box(Vector3(0.5, 1.4, 0.45), Vector3(0, 4.4, 0), Color("2d2f36"))
+			for i in 3:
+				b.sphere(0.15, Vector3(0, 4.85 - i * 0.45, 0.22), [Color("e8463d"), Color("f2b33d"), Color("5cbf7a")][i], 8)
 		_:
 			b.box(Vector3(0.3, 0.3, 0.3), Vector3(0, 0.15, 0), _c(v))
 	var mesh: = b.commit()

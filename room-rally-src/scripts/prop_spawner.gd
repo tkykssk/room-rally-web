@@ -26,29 +26,64 @@ func _ready() -> void:
 	_hx = _stage.get("hx", _stage.get("half", 40.0))
 	_hz = _stage.get("hz", _stage.get("half", 40.0))
 	_rng.seed = rng_seed
-	for it in _stage.rugs:
-		var d: Node3D = DECOR.instantiate()
-		d.model_scene = load(it.p)
-		d.target_width = it.w
-		d.target_depth = it.d
-		add_child(d)
-		d.position = Vector3(it.x, it.get("y", 0.0), it.z)
-		d.rotation.y = deg_to_rad(it.rot)
-	var by_id: = {}
-	for it in _stage.layout:
+	skipped = 0
+	# Journey: the world is split into zones that appear as the truck grows,
+	# so only the part the player can reach is in the scene.
+	_zones = _stage.get("zones", [])
+	var first: Dictionary = _stage
+	if not _zones.is_empty():
+		first = _zones[0]
+	for it in first.get("rugs", []):
+		_add_rug(it)
+	_spawn_set(first)
+	_zones_spawned = 1
+	_report_totals()
+	_warmup_shaders()
+	var gm: = get_tree().get_first_node_in_group("game_manager")
+	if gm and not _zones.is_empty():
+		_gm = gm
+		gm.tier_unlocked.connect(_on_tier_unlocked)
+		_spawn_due_zones()
+
+var _zones: Array = []
+var _zones_spawned: = 0
+var _by_id: = {}
+var _gm: Node = null
+var _vehicle: Node = null
+var _cull_timer: = 0.0
+var _spawning: = false
+
+func _add_rug(it: Dictionary) -> void:
+	var d: Node3D = DECOR.instantiate()
+	d.model_scene = load(it.p)
+	d.target_width = it.w
+	d.target_depth = it.d
+	add_child(d)
+	d.position = Vector3(it.x, it.get("y", 0.0), it.z)
+	d.rotation.y = deg_to_rad(it.rot)
+
+## Lays out one set (a stage, or one journey zone). With `per_frame` > 0 it
+## spreads the work over frames so a zone appearing mid-run doesn't hitch.
+func _spawn_set(data: Dictionary, per_frame: int = 0) -> void:
+	var made: = 0
+	for it in data.get("layout", []):
 		var y: float = it.get("y", 0.0)
 		var p: = _make(it, Vector3(it.x, y, it.z), deg_to_rad(it.get("rot", 0)))
 		if it.has("id"):
-			by_id[it.id] = p
+			_by_id[it.id] = p
 		_placed.append({"pos": Vector2(it.x, it.z), "sep": maxf(it.get("r", 3.0), p.footprint_radius + 1.0), "y": y})
-	for it in _stage.get("on_top", []):
-		var base: Destructible = by_id.get(it.on)
-		if base == null:
+		made += 1
+		if per_frame > 0 and made % per_frame == 0:
+			await get_tree().process_frame
+	for it in data.get("on_top", []):
+		# Untyped: the base may already have been culled (a freed object).
+		var base = _by_id.get(it.on)
+		if base == null or not is_instance_valid(base):
 			push_warning("on_top: no layout id %s" % it.on)
 			continue
 		var spots: Array = []
 		for i in it.get("c", 1):
-			var pos: = base.top_point(_rng)
+			var pos: Vector3 = base.top_point(_rng)
 			for attempt in 10:
 				var ok: = true
 				for q in spots:
@@ -63,9 +98,8 @@ func _ready() -> void:
 			p.set_support(base)
 	# Bigger things first so small clutter fills the gaps around them; an item
 	# with no free spot is skipped rather than dropped inside something else.
-	var clutter: Array = _stage.clutter.duplicate()
+	var clutter: Array = data.get("clutter", []).duplicate()
 	clutter.sort_custom(func(a, b): return a.h > b.h)
-	skipped = 0
 	for it in clutter:
 		var y: float = it.get("y", 0.0)
 		var rect: Array = it.get("rect", [-_hx + 4.0, -_hz + 4.0, _hx - 4.0, _hz - 4.0])
@@ -77,8 +111,56 @@ func _ready() -> void:
 				continue
 			_make(it, Vector3(pos.x, y, pos.y), _rng.randf() * TAU)
 			_placed.append({"pos": pos, "sep": sep, "y": y})
-	_report_totals()
-	_warmup_shaders()
+			made += 1
+			if per_frame > 0 and made % per_frame == 0:
+				await get_tree().process_frame
+
+func _on_tier_unlocked(_tier: int) -> void:
+	_spawn_due_zones()
+
+## Zones appear one tier before the truck can get into them.
+func _spawn_due_zones() -> void:
+	if _spawning:
+		return
+	_spawning = true
+	while _zones_spawned < _zones.size() and _gm.unlocked_tier >= _zones[_zones_spawned].get("spawn_tier", 0):
+		var z: Dictionary = _zones[_zones_spawned]
+		_zones_spawned += 1
+		for it in z.get("rugs", []):
+			_add_rug(it)
+		await _spawn_set(z, 6)
+	_spawning = false
+
+## Things far smaller than the truck and out of its way are dropped from the
+## scene (no points), so a big world keeps a bounded number of props.
+func _process(delta: float) -> void:
+	if _zones.is_empty() or _gm == null:
+		return
+	_cull_timer -= delta
+	if _cull_timer > 0.0:
+		return
+	_cull_timer = 1.0
+	if _vehicle == null:
+		_vehicle = get_tree().get_first_node_in_group("vehicle")
+		if _vehicle == null:
+			return
+	var t: int = _gm.unlocked_tier
+	if _zones_spawned >= _zones.size() and not _spawning:
+		var left: = 0
+		for c in get_children():
+			if c is Destructible and not c.is_queued_for_deletion():
+				left += 1
+		if left == 0:
+			_gm.world_cleared()
+			return
+	if t < 4:
+		return
+	var p: Vector3 = _vehicle.get_vehicle_position()
+	var far: float = 18.0 * _vehicle.size_scale
+	for c in get_children():
+		if c is Destructible and c.size_tier <= t - 4 and not c.is_queued_for_deletion():
+			if Vector2(c.global_position.x - p.x, c.global_position.z - p.z).length() > far:
+				c.queue_free()
 
 ## Spawn one prop from a stage entry: {p | toy, t, h, s, sc?, col?}.
 func _make(it: Dictionary, pos: Vector3, rot_y: float) -> Destructible:
@@ -118,10 +200,11 @@ func _report_totals() -> void:
 
 func _warmup_shaders() -> void:
 	var paths: = {}
-	for key in ["layout", "clutter", "rugs", "on_top"]:
-		for it in _stage.get(key, []):
-			if it.has("p"):
-				paths[it.p] = true
+	for data in [_stage] + _stage.get("zones", []):
+		for key in ["layout", "clutter", "rugs", "on_top"]:
+			for it in data.get(key, []):
+				if it.has("p"):
+					paths[it.p] = true
 	var warm: = Node3D.new()
 	warm.name = "ShaderWarmup"
 	add_child(warm)
