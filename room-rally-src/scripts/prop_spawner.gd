@@ -69,8 +69,15 @@ func _spawn_set(data: Dictionary, per_frame: int = 0) -> void:
 	for it in data.get("layout", []):
 		var y: float = it.get("y", 0.0)
 		var p: = _make(it, Vector3(it.x, y, it.z), deg_to_rad(it.get("rot", 0)))
+		# Optional extras (a car in a driveway, a vending machine...) are
+		# dropped if they would sit inside something already placed.
+		if it.get("opt", false) and _hits_box(p):
+			p.free()
+			skipped += 1
+			continue
 		if it.has("id"):
 			_by_id[it.id] = p
+		_add_box(p)
 		_placed.append({"pos": Vector2(it.x, it.z), "sep": maxf(it.get("r", 3.0), p.footprint_radius + 1.0), "y": y})
 		made += 1
 		if per_frame > 0 and made % per_frame == 0:
@@ -81,21 +88,22 @@ func _spawn_set(data: Dictionary, per_frame: int = 0) -> void:
 		if base == null or not is_instance_valid(base):
 			push_warning("on_top: no layout id %s" % it.on)
 			continue
-		var spots: Array = []
 		for i in it.get("c", 1):
-			var pos: Vector3 = base.top_point(_rng)
-			for attempt in 10:
-				var ok: = true
-				for q in spots:
-					if Vector2(pos.x, pos.z).distance_to(q) < it.get("sep", 1.2):
-						ok = false
-						break
-				if ok:
+			var p: = _make(it, base.top_point(_rng), _rng.randf() * TAU)
+			# Try spots on the top until it clears what is already up there.
+			var ok: = false
+			for attempt in 12:
+				if not _hits_box(p):
+					ok = true
 					break
-				pos = base.top_point(_rng)
-			spots.append(Vector2(pos.x, pos.z))
-			var p: = _make(it, pos, _rng.randf() * TAU)
+				p.position = base.top_point(_rng)
+				p.rotation.y = _rng.randf() * TAU
+			if not ok:
+				p.free()
+				skipped += 1
+				continue
 			p.set_support(base)
+			_add_box(p)
 	# Bigger things first so small clutter fills the gaps around them; an item
 	# with no free spot is skipped rather than dropped inside something else.
 	var clutter: Array = data.get("clutter", []).duplicate()
@@ -105,15 +113,82 @@ func _spawn_set(data: Dictionary, per_frame: int = 0) -> void:
 		var rect: Array = it.get("rect", [-_hx + 4.0, -_hz + 4.0, _hx - 4.0, _hz - 4.0])
 		var sep: float = it.get("sep", maxf(clutter_sep * 0.6, it.h * 1.2))
 		for i in it.c:
-			var pos = _find_spot(rect, y, sep)
-			if pos == null:
+			var p: Destructible = null
+			var ok: = false
+			for attempt in 8:
+				var pos = _find_spot(rect, y, sep)
+				if pos == null:
+					break
+				if p == null:
+					p = _make(it, Vector3(pos.x, y, pos.y), _rng.randf() * TAU)
+				else:
+					p.position = Vector3(pos.x, y, pos.y)
+				if not _hits_box(p):
+					_add_box(p)
+					_placed.append({"pos": pos, "sep": sep, "y": y})
+					ok = true
+					break
+			if not ok:
+				if p != null:
+					p.free()
 				skipped += 1
 				continue
-			_make(it, Vector3(pos.x, y, pos.y), _rng.randf() * TAU)
-			_placed.append({"pos": pos, "sep": sep, "y": y})
 			made += 1
 			if per_frame > 0 and made % per_frame == 0:
 				await get_tree().process_frame
+
+# --- overlap checks on real collision boxes ---------------------------------
+
+const BOX_CELL: = 16.0
+## Spatial hash of placed props' boxes: cell -> [{c, ax, az, half, y0, y1}].
+var _boxes: = {}
+
+## The prop's collision box as a footprint on the ground (oriented rectangle)
+## plus its height range. Slightly shrunk so things may touch.
+func _box_of(p: Destructible) -> Dictionary:
+	var c3: = p.to_global(p.box_center)
+	var yaw: = p.global_rotation.y
+	var half: = Vector2(p.box_size.x, p.box_size.z) * 0.5 * 0.97
+	var hy: = p.box_size.y * 0.5
+	return {"c": Vector2(c3.x, c3.z), "ax": Vector2(cos(yaw), -sin(yaw)), "az": Vector2(sin(yaw), cos(yaw)),
+		"half": half, "y0": c3.y - hy + 0.05, "y1": c3.y + hy - 0.05}
+
+func _cells(b: Dictionary) -> Array:
+	var r: float = b.half.length()
+	var out: = []
+	for x in range(int(floor((b.c.x - r) / BOX_CELL)), int(floor((b.c.x + r) / BOX_CELL)) + 1):
+		for z in range(int(floor((b.c.y - r) / BOX_CELL)), int(floor((b.c.y + r) / BOX_CELL)) + 1):
+			out.append(Vector2i(x, z))
+	return out
+
+func _add_box(p: Destructible) -> void:
+	if p.box_size == Vector3.ZERO:
+		return
+	var b: = _box_of(p)
+	for k in _cells(b):
+		if not _boxes.has(k):
+			_boxes[k] = []
+		_boxes[k].append(b)
+
+func _hits_box(p: Destructible) -> bool:
+	if p.box_size == Vector3.ZERO:
+		return false
+	var b: = _box_of(p)
+	for k in _cells(b):
+		for o in _boxes.get(k, []):
+			if b.y1 > o.y0 and o.y1 > b.y0 and _obb_overlap(b, o):
+				return true
+	return false
+
+## Separating-axis test for two oriented rectangles.
+static func _obb_overlap(a: Dictionary, b: Dictionary) -> bool:
+	var d: Vector2 = b.c - a.c
+	for axis in [a.ax, a.az, b.ax, b.az]:
+		var ra: float = a.half.x * absf(axis.dot(a.ax)) + a.half.y * absf(axis.dot(a.az))
+		var rb: float = b.half.x * absf(axis.dot(b.ax)) + b.half.y * absf(axis.dot(b.az))
+		if absf(d.dot(axis)) > ra + rb:
+			return false
+	return true
 
 func _on_tier_unlocked(_tier: int) -> void:
 	_spawn_due_zones()

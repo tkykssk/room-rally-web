@@ -402,36 +402,42 @@ static func _build(kind: String, v: int) -> ArrayMesh:
 				for z in [-1.15, 1.15]:
 					b.cyl(0.55, 0.35, Vector3(x, 0.55, z), Color("2d2f36"), 12, Vector3(90, 0, 0))
 		"house":
-			# Four kinds of house, each in five colour schemes.
+			# Four kinds of house, each in five colour schemes. All share one
+			# footprint (11 x 9.2 including the roof), so a lot of a given
+			# size fits any of them.
 			var wall: Color = [Color("f4ead8"), Color("e8d3b0"), Color("cfe0e8"), Color("f0d0c8"), Color("dfe8c8")][v % 5]
 			var roofc: Color = [Color("c45a4a"), Color("4a6fc4"), Color("6b4a2b"), Color("4f8a5a"), Color("5a5f6b")][(v + 2) % 5]
+			var fz: = 4.0   # front wall
 			match v % 4:
 				0:  # two storeys, gable roof
 					b.box(Vector3(10.0, 6.0, 8.0), Vector3(0, 3.0, 0), wall)
 					b.add(_roof(), Vector3(0, 8.0, 0), roofc, Vector3(0, 90, 0), Vector3(9.0, 4.0, 11.0))
 					b.box(Vector3(0.9, 2.2, 0.9), Vector3(2.8, 8.6, -1.5), Color("a8463d"))
 				1:  # hip roof, wider
-					b.box(Vector3(11.0, 5.6, 9.0), Vector3(0, 2.8, 0), wall)
+					fz = 4.4
+					b.box(Vector3(10.8, 5.6, 8.8), Vector3(0, 2.8, 0), wall)
 					var hip: = CylinderMesh.new()
-					hip.top_radius = 1.2
-					hip.bottom_radius = 8.2
+					hip.top_radius = 1.1
+					hip.bottom_radius = 7.7
 					hip.height = 3.2
 					hip.radial_segments = 4
 					hip.rings = 1
-					b.add(hip, Vector3(0, 7.2, 0), roofc, Vector3(0, 45, 0), Vector3(1.0, 1.0, 0.82))
+					b.add(hip, Vector3(0, 7.2, 0), roofc, Vector3(0, 45, 0), Vector3(1.0, 1.0, 0.84))
 				2:  # modern, flat roof with a balcony
-					b.box(Vector3(10.0, 6.4, 8.0), Vector3(0, 3.2, 0), wall.lightened(0.2))
-					b.box(Vector3(10.4, 0.4, 8.4), Vector3(0, 6.6, 0), Color("5a5f6b"))
-					b.box(Vector3(6.0, 0.25, 1.6), Vector3(-1.0, 3.3, 4.8), Color("9a9a96"))
-					b.box(Vector3(6.0, 1.1, 0.1), Vector3(-1.0, 3.9, 5.55), Color("f4f1e8"))
+					fz = 3.5
+					b.box(Vector3(10.0, 6.4, 7.0), Vector3(0, 3.2, 0), wall.lightened(0.2))
+					b.box(Vector3(10.4, 0.4, 7.4), Vector3(0, 6.6, 0), Color("5a5f6b"))
+					b.box(Vector3(6.0, 0.25, 1.0), Vector3(-1.0, 3.3, 4.0), Color("9a9a96"))
+					b.box(Vector3(6.0, 1.1, 0.1), Vector3(-1.0, 3.9, 4.45), Color("f4f1e8"))
 				_:  # narrow, three storeys
 					b.box(Vector3(7.0, 8.4, 8.0), Vector3(0, 4.2, 0), wall)
 					b.add(_roof(), Vector3(0, 9.9, 0), roofc, Vector3(0, 90, 0), Vector3(9.0, 3.0, 7.8))
-			b.box(Vector3(1.6, 3.0, 0.1), Vector3(-1.5, 1.5, 4.05), Color("a8683f"))
-			for x in [-3.2, 2.4]:
-				b.box(Vector3(1.8, 1.4, 0.1), Vector3(x * 0.8, 4.6, 4.05), Color("bfe6ff"))
-				b.box(Vector3(1.8, 1.4, 0.1), Vector3(x * 0.8, 4.6, -4.05), Color("bfe6ff"))
-			b.box(Vector3(1.8, 1.4, 0.1), Vector3(2.4, 1.8, 4.05), Color("bfe6ff"))
+			# door and windows stand clear of the wall (no coplanar faces)
+			b.box(Vector3(1.6, 3.0, 0.16), Vector3(-1.5, 1.5, fz + 0.08), Color("a8683f"))
+			for x in [-2.6, 1.9]:
+				b.box(Vector3(1.8, 1.4, 0.16), Vector3(x, 4.6, fz + 0.08), Color("bfe6ff"))
+				b.box(Vector3(1.8, 1.4, 0.16), Vector3(x, 4.6, -fz - 0.08), Color("bfe6ff"))
+			b.box(Vector3(1.8, 1.4, 0.16), Vector3(2.0, 1.8, fz + 0.08), Color("bfe6ff"))
 		"apartment":
 			# A three/four-storey block of flats with balconies on the front.
 			var floors: = 3 + v % 2
@@ -576,9 +582,15 @@ class _Builder:
 		for idx in arrays[Mesh.ARRAY_INDEX]:
 			indices.append(base + idx)
 
+	## Each box grows a hair more than the one before it, so a detail box
+	## (window, door, sign band) never shares a face with the body it sits
+	## on: coplanar faces z-fight (flicker), especially far away.
+	var _boxes: = 0
+
 	func box(size: Vector3, pos: Vector3, color: Color) -> void:
 		var m: = BoxMesh.new()
-		m.size = size
+		_boxes += 1
+		m.size = size + Vector3.ONE * (0.012 * _boxes)
 		add(m, pos, color)
 
 	func sphere(r: float, pos: Vector3, color: Color, seg: int = 10, scl: Vector3 = Vector3.ONE) -> void:

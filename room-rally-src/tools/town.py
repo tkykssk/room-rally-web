@@ -238,7 +238,7 @@ def build(toy, C):
                 z = a[1] + uz * t + nz * (road["w"] / 2 + 1.0)
                 if abs(x) < HX - 4 and abs(z) < HZ - 4 and not point_in(rect_poly(YARD, 2), x, z):
                     layout.append(toy("utilitypole", 6, 16.0, 300, round(x, 1), round(z, 1),
-                                      round(math.degrees(math.atan2(ux, uz)), 1), solid=[0.25, 0.25]))
+                                      round(math.degrees(math.atan2(ux, uz)), 1), solid=[0.25, 0.25], opt=True))
                 t += rng.uniform(62, 80)
             if rng.random() < 0.6 and L > 60:
                 t = rng.uniform(20, L - 20)
@@ -247,7 +247,7 @@ def build(toy, C):
                 z = a[1] + uz * t - nz * off
                 kind = rng.choice(["sedan", "sedan", "van"])
                 layout.append(toy(kind, 7, 6.5 if kind == "sedan" else 8.0, 400 if kind == "sedan" else 450,
-                                  round(x, 1), round(z, 1), round(math.degrees(math.atan2(ux, uz)) - 90, 1)))
+                                  round(x, 1), round(z, 1), round(math.degrees(math.atan2(ux, uz)) - 90, 1), opt=True))
     # buses on the main road
     layout.append(toy("bus", 8, 11.0, 700, 190, -150, -87))
     layout.append(toy("bus", 8, 11.0, 700, 205, 150, -86))
@@ -293,57 +293,55 @@ def _fill_lot(kind, cx, cz, w, d, r, rng, toy, C, layout, floors):
     else:
         patch["color"] = ground
     floors.append(patch)
+    # Buildings are sized by scale (sc) to fit the lot: every house kind has
+    # the same 11 x 9.2 footprint, an apartment 18 x 8.3, a shop 14.2 x 10.2.
+    # Extras are optional ("opt"): the spawner drops any that would clip
+    # into something already placed.
+    def extra(kind_e, t, h, s, lx, lz, rot, **kw):
+        x, z = at(lx, lz)
+        layout.append(toy(kind_e, t, h, s, x, z, round(rot, 1), opt=True, **kw))
+
     if kind == "house":
-        # Small lots get small houses: the house fills the back of the lot.
-        h = round(max(20.0, min(38.0, w * 0.78, (d - 8) * 1.0, rng.uniform(26, 38))), 1)
-        t, s = (9, 900) if h >= 33 else ((8, 650) if h >= 25 else (7, 480))
-        bx, bz = at(rng.uniform(-2, 2), -d / 2 + 0.47 * h + 1)
-        layout.append(toy("house", t, h, s, bx, bz, deg, solid=[0.9, 0.9]))
+        sc = round(max(1.9, min(3.6, (w - 3) / 11.0, (d - 8) / 9.2)), 2)
+        t, s = (9, 900) if sc >= 3.1 else ((8, 650) if sc >= 2.5 else (7, 480))
+        bx, bz = at(rng.uniform(-1, 1), -d / 2 + 4.6 * sc + 1)
+        layout.append(toy("house", t, round(sc * 9.5, 1), s, bx, bz, deg, sc=sc, solid=[0.9, 0.9]))
+        front = d / 2 - (4.6 * sc * 2 + 1)        # depth left in front of the house
         roll = rng.random()
-        if roll < 0.5:
-            x, z = at(w / 2 - 9 if rng.random() < 0.5 else -w / 2 + 9, d / 2 - 7)
-            layout.append(toy("sedan", 7, 6.5, 400, x, z, deg + 90))
-        elif roll < 0.75:
-            x, z = at(w / 2 - 6, d / 2 - 5)
-            layout.append(toy("bicycle", 5, 5.0, 200, x, z, deg + 90))
+        if roll < 0.5 and front > 8:
+            extra("sedan", 7, 6.5, 400, rng.choice([-1, 1]) * (w / 2 - 8), d / 2 - 4.2, deg)
+        elif roll < 0.75 and front > 5:
+            extra("bicycle", 5, 5.0, 200, w / 2 - 5, d / 2 - 3, deg)
         if rng.random() < 0.6:
-            x, z = at(-w / 2 + 5, d / 2 - 4)
-            layout.append(toy("bush", 5, 7.0, 220, x, z, 0))
+            extra("bush", 5, 7.0, 220, -w / 2 + 4, d / 2 - 4, 0)
         if rng.random() < 0.5:
-            x, z = at(w / 2 - 5, -d / 2 + 6)
-            layout.append(toy("tree", 7, 18.0, 450, x, z, 0, solid=[0.15, 0.15]))
+            extra("tree", 7, 18.0, 450, w / 2 - 4, -d / 2 + 4, 0, solid=[0.15, 0.15])
         if rng.random() < 0.5:
-            x, z = at(-w / 2 + 3, -d / 2 + 30)
-            layout.append(toy("ac", 4, 4.0, 110, x, z, deg - 90))
+            extra("ac", 4, 4.0, 110, -5.5 * sc - 2, -d / 2 + 4.6 * sc + 1, deg - 90)
     elif kind == "apartment":
-        h = round(rng.uniform(38, 46), 1)
-        bx, bz = at(0, -d / 2 + 20)
-        layout.append(toy("apartment", 9, h, 1100, bx, bz, deg, solid=[0.95, 0.95]))
-        x, z = at(-w / 2 + 6, d / 2 - 5)
-        layout.append(toy("bikerack", 5, 3.5, 200, x, z, deg))
-        x, z = at(w / 2 - 8, d / 2 - 6)
-        layout.append(toy("vending", 6, 9.0, 300, x, z, deg))
+        sc = round(min(2.8, (w - 4) / 18.0, (d - 10) / 8.3), 2)
+        # its box is off-centre (stair tower on one side): centre the box in the lot
+        bx, bz = at(-0.8 * sc, -d / 2 + 3.6 * sc + 2)
+        layout.append(toy("apartment", 9, round(sc * 10, 1), 1100, bx, bz, deg, sc=sc, solid=[0.95, 0.95]))
+        extra("bikerack", 5, 3.5, 200, -w / 2 + 6, d / 2 - 3, deg)
+        extra("vending", 6, 9.0, 300, w / 2 - 6, d / 2 - 3, deg)
     elif kind == "shop":
-        bx, bz = at(0, -d / 2 + 16)
-        layout.append(toy("shop", 8, 17.0, 700, bx, bz, deg, solid=[0.95, 0.95]))
+        sc = round(min(3.4, (w - 6) / 14.2, (d - 16) / 10.2), 2)
+        bx, bz = at(0, -d / 2 + 5.1 * sc + 2)
+        layout.append(toy("shop", 8, round(sc * 5.3, 1), 700, bx, bz, deg, sc=sc, solid=[0.95, 0.95]))
         for k in range(2):
-            x, z = at(-w / 2 + 10 + k * 16, d / 2 - 8)
-            layout.append(toy("sedan", 7, 6.5, 400, x, z, deg + rng.uniform(-8, 8)))
-        x, z = at(w / 2 - 5, d / 2 - 14)
-        layout.append(toy("vending", 6, 9.0, 300, x, z, deg))
-        x, z = at(w / 2 - 9, d / 2 - 14)
-        layout.append(toy("vending", 6, 9.0, 300, x, z, deg))
+            extra("sedan", 7, 6.5, 400, -w / 2 + 10 + k * 16, d / 2 - 5, deg + rng.uniform(-6, 6))
+        extra("vending", 6, 9.0, 300, w / 2 - 4, d / 2 - 4, deg)
+        extra("vending", 6, 9.0, 300, w / 2 - 11, d / 2 - 4, deg)
     elif kind == "parking":
         n = int(w // 14)
         for k in range(n):
             if rng.random() < 0.7:
-                x, z = at(-w / 2 + 7 + k * 14, rng.uniform(-6, 6))
                 kind_c = "van" if rng.random() < 0.3 else "sedan"
-                layout.append(toy(kind_c, 7, 8.0 if kind_c == "van" else 6.5, 450 if kind_c == "van" else 400,
-                                  x, z, deg + 90 + rng.uniform(-6, 6)))
-        x, z = at(w / 2 - 4, d / 2 - 4)
-        layout.append(toy("vending", 6, 9.0, 300, x, z, deg))
+                extra(kind_c, 7, 8.0 if kind_c == "van" else 6.5, 450 if kind_c == "van" else 400,
+                      -w / 2 + 7 + k * 14, rng.uniform(-4, 4), deg + 90 + rng.uniform(-6, 6))
+        extra("vending", 6, 9.0, 300, w / 2 - 4, d / 2 - 4, deg)
     else:  # field / empty plot
         for k in range(rng.randint(2, 4)):
-            x, z = at(rng.uniform(-w / 2 + 6, w / 2 - 6), rng.uniform(-d / 2 + 6, d / 2 - 6))
-            layout.append(toy("bush", 5, 7.0, 220, x, z, rng.uniform(0, 360)))
+            extra("bush", 5, 7.0, 220, rng.uniform(-w / 2 + 6, w / 2 - 6), rng.uniform(-d / 2 + 6, d / 2 - 6),
+                  rng.uniform(0, 360))
