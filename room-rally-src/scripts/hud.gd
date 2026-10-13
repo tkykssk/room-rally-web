@@ -32,6 +32,12 @@ var _next_btn: Button
 var _result_bonus: Label
 var _result_title: Label
 var _goal_label: Label
+var _size_label: Label
+var _bonus_label: Label
+var _zone: = -1
+var _zones_seen: = {}
+var _zone_timer: = 0.0
+var _vehicle: Node = null
 
 func _ready() -> void:
 	_gm = get_tree().get_first_node_in_group("game_manager")
@@ -48,8 +54,10 @@ func _ready() -> void:
 	_gm.game_over.connect(_on_game_over)
 	_gm.smashed.connect(_on_smashed)
 	_gm.room_cleared.connect(_on_room_cleared)
+	_gm.time_bonus.connect(_on_time_bonus)
 	_on_state_changed(_gm.state)
 	_on_score_changed(_gm.score)
+	_size_label.text = "SIZE  " + size_text(1.0)
 	_on_time_changed(_gm.time_left)
 
 func _on_state_changed(state: int) -> void:
@@ -69,7 +77,8 @@ func _on_score_changed(s: int) -> void:
 	_score_label.text = "%d" % s
 	var tier: int = _gm.unlocked_tier
 	var next: int = _gm.next_threshold()
-	_tier_label.text = "TIER %d" % tier if next < 0 else "TIER %d  →  %d" % [tier, next]
+	# (no arrow glyph: the web font has none)
+	_tier_label.text = "TIER %d" % tier if next < 0 else "TIER %d  •  NEXT %d" % [tier, next]
 	var prev: int = 0 if tier == 0 else _gm.tier_thresholds[tier - 1]
 	_tier_bar.value = 1.0 if next < 0 else clampf(float(s - prev) / float(next - prev), 0.0, 1.0)
 	var stars: int = _gm.stars_for(s)
@@ -85,8 +94,45 @@ func _on_time_changed(t: float) -> void:
 	_time_label.add_theme_color_override("font_color", PINK if urgent else INK)
 
 func _on_tier_unlocked(tier: int) -> void:
-	_banner.text = "TIER %d!" % tier
-	_banner_sub.text = "Bigger things can be smashed now"
+	if _size_label.visible:
+		_size_label.text = "SIZE  " + size_text(Vehicle.GROW_PER_TIER ** tier)
+	_show_banner("TIER %d!" % tier, "Bigger things can be smashed now")
+
+func _on_time_bonus(seconds: float) -> void:
+	_bonus_label.text = "+%ds" % int(seconds)
+	_bonus_label.visible = true
+	_bonus_label.modulate.a = 1.0
+	var tw: = _bonus_label.create_tween()
+	tw.tween_interval(1.2)
+	tw.tween_property(_bonus_label, "modulate:a", 0.0, 0.5)
+
+## Journey: name the area the first time the truck rolls into it.
+func _process(delta: float) -> void:
+	if _gm == null or not _size_label.visible or _gm.state != _gm.State.PLAYING:
+		return
+	_zone_timer -= delta
+	if _zone_timer > 0.0:
+		return
+	_zone_timer = 0.25
+	if _vehicle == null:
+		_vehicle = get_tree().get_first_node_in_group("vehicle")
+		if _vehicle == null:
+			return
+	var p: Vector3 = _vehicle.get_vehicle_position()
+	var zones: Array = Stages.get_stage().get("zones", [])
+	for k in zones.size():
+		var r: Array = zones[k].rect
+		if p.x >= r[0] and p.x <= r[2] and p.z >= r[1] and p.z <= r[3]:
+			if k != _zone and not _zones_seen.has(k):
+				_zones_seen[k] = true
+				if k > 0:
+					_show_banner(zones[k].name.to_upper(), zones[k].get("sub", ""))
+			_zone = k
+			return
+
+func _show_banner(text: String, sub: String) -> void:
+	_banner.text = text
+	_banner_sub.text = sub
 	if _banner_tween:
 		_banner_tween.kill()
 	for c in [_banner, _banner_sub]:
@@ -101,7 +147,7 @@ func _on_tier_unlocked(tier: int) -> void:
 	_banner_tween.parallel().tween_property(_banner_sub, "modulate:a", 0.0, 0.35)
 
 func _on_room_cleared(bonus: int) -> void:
-	_result_bonus.text = "ROOM CLEARED!  Time bonus +%d" % bonus
+	_result_bonus.text = ("WORLD CLEARED!  Time bonus +%d" if _gm.is_journey() else "ROOM CLEARED!  Time bonus +%d") % bonus
 	_result_bonus.visible = true
 
 ## "+120" rising from the smashed prop.
@@ -119,7 +165,7 @@ func _on_smashed(world_pos: Vector3, points: int, height: float) -> void:
 
 func _on_game_over(final_score: int) -> void:
 	_result_score.text = "%d" % final_score
-	_result_title.text = "CLEARED!" if _gm.props_left <= 0 else "TIME UP!"
+	_result_title.text = "CLEARED!" if _gm.cleared else "TIME UP!"
 	var stars: int = _gm.stars_for(final_score)
 	for i in _result_stars.size():
 		var star: StarIcon = _result_stars[i]
@@ -131,6 +177,8 @@ func _on_game_over(final_score: int) -> void:
 		tw.tween_property(star, "scale", Vector2.ONE, 0.3).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 	_next_btn.visible = _gm.has_next_stage()
 	_result_tier.text = "Reached TIER %d" % _gm.unlocked_tier
+	if _gm.is_journey():
+		_result_tier.text = "Grew to %s  (TIER %d)" % [size_text(Vehicle.GROW_PER_TIER ** _gm.unlocked_tier), _gm.unlocked_tier]
 	var new_best: bool = final_score >= _gm.best_score and final_score > 0
 	_result_best.text = ("NEW BEST!  %d" if new_best else "BEST  %d") % _gm.best_score
 	_result_best.add_theme_color_override("font_color", PINK if new_best else INK)
@@ -170,6 +218,9 @@ func _build_hud() -> void:
 	box.add_child(_tier_label)
 	_goal_label = _label("", 20, PINK)
 	box.add_child(_goal_label)
+	_size_label = _label("", 22, Color("3fae6a"))
+	_size_label.visible = Stages.get_stage().get("journey", false)
+	box.add_child(_size_label)
 	_time_panel = _panel()
 	_time_panel.set_anchors_preset(Control.PRESET_TOP_RIGHT)
 	_time_panel.offset_left = -220
@@ -197,30 +248,74 @@ func _build_hud() -> void:
 	_hud.add_child(_banner_sub)
 	_banner.visible = false
 	_banner_sub.visible = false
+	_bonus_label = _label("", 34, Color("3fae6a"), 8)
+	_bonus_label.set_anchors_preset(Control.PRESET_TOP_RIGHT)
+	_bonus_label.offset_left = -220
+	_bonus_label.offset_right = -96
+	_bonus_label.offset_top = 92
+	_bonus_label.offset_bottom = 136
+	_bonus_label.visible = false
+	_hud.add_child(_bonus_label)
 
 func _build_title() -> void:
 	_title = _overlay(Color(0.15, 0.08, 0.2, 0.5))
 	var box: = _centered_box(_title, 12)
-	var title: = _label("ROOM RALLY", 100, Color.WHITE, 24)
+	var title: = _label("ROOM RALLY", 84, Color.WHITE, 22)
 	title.add_theme_color_override("font_outline_color", PINK)
 	box.add_child(title)
-	box.add_child(_label("Smash the room. Grow your truck!", 32, Color.WHITE, 10))
+	box.add_child(_label("Smash everything. Grow your truck!", 28, Color.WHITE, 10))
+	# The journey is the main mode; the fixed rooms are timed challenges.
+	var journey: = -1
+	var challenges: Array = []
+	for i in Stages.count():
+		if Stages.get_stage(i).get("journey", false):
+			journey = i
+		else:
+			challenges.append(i)
+	if journey >= 0:
+		var jc: = _journey_card(journey)
+		jc.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+		box.add_child(jc)
+	box.add_child(_label("CHALLENGES", 22, Color(1, 1, 1, 0.85), 6))
 	var row: = HBoxContainer.new()
 	row.alignment = BoxContainer.ALIGNMENT_CENTER
 	row.add_theme_constant_override("separation", 14)
 	box.add_child(row)
-	for i in Stages.count():
-		row.add_child(_stage_card(i))
+	for n in challenges.size():
+		row.add_child(_stage_card(challenges[n], n + 1, challenges.size()))
 	box.add_child(_label("Drive: WASD / Arrows / touch buttons   •   C: camera   •   P: pause", 22, Color.WHITE, 8))
 	_credit(_title)
 
-func _stage_card(i: int) -> Control:
+## The big "JOURNEY" button: one continuous run from a toy to a giant.
+func _journey_card(i: int) -> Control:
+	var rec: Dictionary = _gm.record(i) if _gm else {"best": 0, "stars": 0}
+	var b: = _button("", 1, Vector2(620, 150), Color("3fae6a"))
+	b.pressed.connect(func(): _gm.play_stage(i))
+	var v: = VBoxContainer.new()
+	v.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	v.alignment = BoxContainer.ALIGNMENT_CENTER
+	v.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	b.add_child(v)
+	v.add_child(_label("JOURNEY", 50, Color.WHITE, 10))
+	v.add_child(_label("From the kid's room to the whole neighborhood", 22, Color.WHITE))
+	var best: String = "BEST %d  •  %s" % [rec.best, size_text(Vehicle.GROW_PER_TIER ** rec.get("tier", 0))] if rec.best > 0 else "Grow bigger to open the way out"
+	v.add_child(_label(best, 20, Color(1, 1, 1, 0.85)))
+	for c in v.get_children():
+		c.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	return b
+
+## Truck size for display: the toy truck starts at about 20 cm.
+static func size_text(scale: float) -> String:
+	var cm: = 20.0 * scale
+	return "%d cm" % int(round(cm)) if cm < 100.0 else "%.1f m" % (cm / 100.0)
+
+func _stage_card(i: int, number: int, count: int) -> Control:
 	var st: Dictionary = Stages.get_stage(i)
 	var unlocked: bool = _gm == null or _gm.is_unlocked(i)
 	var rec: Dictionary = _gm.record(i) if _gm else {"best": 0, "stars": 0}
 	# Narrower cards when there are more stages, so the row fits 1280 px.
-	var w: = minf(250.0, (1220.0 - 14.0 * (Stages.count() - 1)) / Stages.count())
-	var b: = _button("", 1, Vector2(w, 190), PINK if unlocked else Color("8a7fa0"))
+	var w: = minf(250.0, (1220.0 - 14.0 * (count - 1)) / count)
+	var b: = _button("", 1, Vector2(w, 150), PINK if unlocked else Color("8a7fa0"))
 	b.disabled = not unlocked
 	b.add_theme_stylebox_override("disabled", b.get_theme_stylebox("normal"))
 	b.pressed.connect(func(): _gm.play_stage(i))
@@ -229,20 +324,20 @@ func _stage_card(i: int) -> Control:
 	v.alignment = BoxContainer.ALIGNMENT_CENTER
 	v.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	b.add_child(v)
-	v.add_child(_label("STAGE %d" % (i + 1), 20, Color(1, 1, 1, 0.85)))
-	v.add_child(_label(st.name, 34, Color.WHITE, 6))
+	v.add_child(_label("STAGE %d" % number, 18, Color(1, 1, 1, 0.85)))
+	v.add_child(_label(st.name, 30, Color.WHITE, 6))
 	var stars: = HBoxContainer.new()
 	stars.alignment = BoxContainer.ALIGNMENT_CENTER
 	stars.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	for k in 3:
 		var star: = StarIcon.new()
 		star.filled = k < rec.stars
-		star.custom_minimum_size = Vector2(30, 30)
+		star.custom_minimum_size = Vector2(26, 26)
 		stars.add_child(star)
 	v.add_child(stars)
-	var info: String = ("BEST %d" % rec.best) if unlocked else "Get 1 star in stage %d" % i
-	v.add_child(_label(info, 18, Color.WHITE))
-	v.add_child(_label("%d:%02d" % [int(st.time) / 60, int(st.time) % 60] if unlocked else "LOCKED", 18, Color(1, 1, 1, 0.8)))
+	var info: String = ("BEST %d" % rec.best) if unlocked else "Get 1 star in stage %d" % (number - 1)
+	v.add_child(_label(info, 16, Color.WHITE))
+	v.add_child(_label("%d:%02d" % [int(st.time) / 60, int(st.time) % 60] if unlocked else "LOCKED", 16, Color(1, 1, 1, 0.8)))
 	for c in v.get_children():
 		c.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	return b
@@ -258,7 +353,7 @@ func _build_pause() -> void:
 	resume.pressed.connect(func(): _gm.resume())
 	box.add_child(resume)
 	var retry: = _button("RESTART", 30, Vector2(260, 64), Color("8a7fa0"))
-	var quit: = _button("STAGES", 30, Vector2(260, 64), Color("8a7fa0"))
+	var quit: = _button("MENU", 30, Vector2(260, 64), Color("8a7fa0"))
 	quit.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 	quit.pressed.connect(func(): _gm.to_stage_select())
 	retry.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
@@ -303,7 +398,7 @@ func _build_result() -> void:
 	buttons.alignment = BoxContainer.ALIGNMENT_CENTER
 	buttons.add_theme_constant_override("separation", 16)
 	box.add_child(buttons)
-	var stages_btn: = _button("STAGES", 30, Vector2(200, 72), Color("8a7fa0"))
+	var stages_btn: = _button("MENU", 30, Vector2(200, 72), Color("8a7fa0"))
 	stages_btn.pressed.connect(func(): _gm.to_stage_select())
 	buttons.add_child(stages_btn)
 	var retry: = _button("RETRY", 34, Vector2(200, 72))
