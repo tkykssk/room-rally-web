@@ -92,6 +92,8 @@ func _make(it: Dictionary, pos: Vector3, rot_y: float) -> Destructible:
 	p.score_value = it.s
 	p.target_height = it.h
 	p.target_scale = it.get("sc", 0.0)
+	if it.has("solid"):
+		p.solid_frac = Vector2(it.solid[0], it.solid[1])
 	add_child(p)
 	p.position = pos
 	p.rotation.y = rot_y
@@ -209,4 +211,10 @@ func _blocked_by_structure(p: Vector2) -> bool:
 		var c: = Vector2(w.to[0], w.to[1])
 		if Geometry2D.get_closest_point_to_segment(p, a, c).distance_to(p) < 1.6:
 			return true
+		# Keep doorways clear too (a box dropped in front of a pet flap
+		# would close it).
+		for d in w.get("doors", []):
+			var mid: = a + (c - a).normalized() * float(d[0])
+			if p.distance_to(mid) < d[1] * 0.5 + 4.0:
+				return true
 	return false

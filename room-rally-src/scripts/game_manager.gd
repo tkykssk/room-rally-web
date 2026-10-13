@@ -137,12 +137,13 @@ func set_stage_props(count: int, points: int, points_by_tier: Dictionary = {}) -
 	if not points_by_tier.is_empty():
 		tier_thresholds.clear()
 		var prev: = 0
-		for k in range(1, Stages.TIER_FRACTIONS.size() + 1):
+		var fractions: Array = Stages.get_stage().get("tier_fractions", Stages.TIER_FRACTIONS)
+		for k in range(1, fractions.size() + 1):
 			var below: = 0
 			for t in points_by_tier:
 				if t < k:
 					below += points_by_tier[t]
-			var thr: = maxi(int(round(below * Stages.TIER_FRACTIONS[k - 1] / 10.0)) * 10, prev + 10)
+			var thr: = maxi(int(round(below * fractions[k - 1] / 10.0)) * 10, prev + 10)
 			tier_thresholds.append(thr)
 			prev = thr
 	star_goals.clear()

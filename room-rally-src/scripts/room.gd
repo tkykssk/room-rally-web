@@ -5,6 +5,10 @@ extends Node3D
 ##   a door and pictures; an outer wall sinks if the camera ends up behind it)
 ## - interior walls with doorways, which fade when they hide the truck
 ## - raised platforms and ramps the truck can drive up
+## - outdoor stages ("outdoor": true): a lawn with a fence around it instead of
+##   the room shell, floor patches (the house floor, a patio, a sand pit) and
+##   scenery beyond the fence. The house is built from interior walls, so the
+##   truck rolls from inside to outside without a loading screen.
 
 @export var wall_height: float = 12.0
 @export var drop_margin: float = 1.5
@@ -17,6 +21,8 @@ const INNER_WALL_LAYER: = 8
 const INNER_WALL_HEIGHT: = 10.0
 const FADED_ALPHA: = 0.18
 const FLOOR_SHADER: = preload("res://scenes/floor_planks.gdshader")
+const LAWN_SHADER: = preload("res://scenes/lawn.gdshader")
+const FENCE_HEIGHT: = 3.2
 const WALL_SHADER: = preload("res://scenes/wallpaper.gdshader")
 
 var hx: float = 40.0
@@ -34,8 +40,20 @@ func _ready() -> void:
 	_floor_mat = PhysicsMaterial.new()
 	_floor_mat.friction = 6.0
 	_floor_mat.rough = true
-	_build_floor()
 	var trim: = _mat(Color("f7f2ea"))
+	if stage.get("outdoor", false):
+		_build_outdoor(stage)
+	else:
+		_build_floor()
+		_build_room_shell(stage, trim)
+	for w in stage.get("walls", []):
+		_build_inner_wall(w, stage.get("inner_wall", Color("e9dcc6")), trim)
+	for p in stage.get("platforms", []):
+		_build_platform(p)
+	for r in stage.get("ramps", []):
+		_build_ramp(r)
+
+func _build_room_shell(stage: Dictionary, trim: Material) -> void:
 	var paper: = ShaderMaterial.new()
 	paper.shader = WALL_SHADER
 	paper.set_shader_parameter("base_color", stage.wall)
@@ -49,12 +67,6 @@ func _ready() -> void:
 		{"type": "window", "x": -0.35}, {"type": "picture", "x": 0.4, "c": Color("f2b33d")}])
 	_build_wall(Vector3(-hx, 0, 0), Vector3(1, 0, 0), hz, trim, paper, [
 		{"type": "picture", "x": -0.3, "c": Color("e8576d")}, {"type": "window", "x": 0.5}])
-	for w in stage.get("walls", []):
-		_build_inner_wall(w, stage.get("inner_wall", Color("e9dcc6")), trim)
-	for p in stage.get("platforms", []):
-		_build_platform(p)
-	for r in stage.get("ramps", []):
-		_build_ramp(r)
 
 func _process(delta: float) -> void:
 	var cam: = get_viewport().get_camera_3d()
@@ -70,6 +82,135 @@ func _process(delta: float) -> void:
 	_fade_inner_walls(cam, delta)
 
 # --- floor & outer walls ----------------------------------------------------
+
+# --- outdoors -------------------------------------------------------------------
+
+func _build_outdoor(stage: Dictionary) -> void:
+	# Ground: one collider for the whole yard; the lawn reaches past the fence
+	# so the world doesn't end at the edge.
+	var body: = StaticBody3D.new()
+	body.name = "Floor"
+	body.add_to_group("ground")
+	body.physics_material_override = _floor_mat
+	add_child(body)
+	var cs: = CollisionShape3D.new()
+	var shape: = BoxShape3D.new()
+	shape.size = Vector3(hx * 2.0, 0.2, hz * 2.0)
+	cs.shape = shape
+	cs.position.y = -0.1
+	body.add_child(cs)
+	var lawn: = ShaderMaterial.new()
+	lawn.shader = LAWN_SHADER
+	_plane(Vector2(hx * 2.0 + 160.0, hz * 2.0 + 160.0), Vector3.ZERO, lawn)
+	var layer: = 0
+	for f in stage.get("floors", []):
+		layer += 1
+		var r: Array = f.rect
+		var size: = Vector2(absf(r[2] - r[0]), absf(r[3] - r[1]))
+		var pos: = Vector3((r[0] + r[2]) * 0.5, 0.01 + layer * 0.004, (r[1] + r[3]) * 0.5)
+		var m: Material
+		if f.get("kind", "") == "planks":
+			var sm: = ShaderMaterial.new()
+			sm.shader = FLOOR_SHADER
+			if f.has("a"):
+				sm.set_shader_parameter("wood_a", f.a)
+				sm.set_shader_parameter("wood_b", f.b)
+			m = sm
+		else:
+			m = _mat(f.get("color", Color("d8cdb8")))
+		_plane(size, pos, m)
+	_build_fence(stage.get("fence", Color("f4ead8")))
+	_build_scenery()
+
+func _plane(size: Vector2, pos: Vector3, m: Material) -> void:
+	var mi: = MeshInstance3D.new()
+	var plane: = PlaneMesh.new()
+	plane.size = size
+	plane.material = m
+	mi.mesh = plane
+	mi.position = pos
+	add_child(mi)
+
+## Picket fence around the yard, with a tall invisible collider so a fully
+## grown truck can't get over it. It is low, so the camera ignores it.
+func _build_fence(color: Color) -> void:
+	var paint: = _mat(color)
+	for side in 4:
+		var along_x: = side < 2
+		var half: = hx if along_x else hz
+		var sgn: = 1.0 if side % 2 == 0 else -1.0
+		var origin: = Vector3(0, 0, sgn * (hz + 0.3)) if along_x else Vector3(sgn * (hx + 0.3), 0, 0)
+		var tangent: = Vector3.RIGHT if along_x else Vector3.BACK
+		var body: = StaticBody3D.new()
+		body.physics_material_override = Destructible.obstacle_material()
+		add_child(body)
+		var cs: = CollisionShape3D.new()
+		var shape: = BoxShape3D.new()
+		var length: = half * 2.0 + 2.0
+		shape.size = Vector3(length, 60.0, 1.0) if along_x else Vector3(1.0, 60.0, length)
+		cs.shape = shape
+		cs.position = origin + Vector3(0, 30.0, 0) + (Vector3(0, 0, sgn * 0.5) if along_x else Vector3(sgn * 0.5, 0, 0))
+		body.add_child(cs)
+		# Two rails plus pickets (one mesh per picket is fine: ~100 per side
+		# would not be, so pickets are 1.5 apart and share one material).
+		var rail_size: = Vector3(length, 0.25, 0.15) if along_x else Vector3(0.15, 0.25, length)
+		_box(self, rail_size, origin + Vector3(0, 1.0, 0), paint)
+		_box(self, rail_size, origin + Vector3(0, 2.3, 0), paint)
+		var n: = int(length / 1.5)
+		var mm: = MultiMesh.new()
+		mm.transform_format = MultiMesh.TRANSFORM_3D
+		var picket: = BoxMesh.new()
+		picket.size = Vector3(0.7, FENCE_HEIGHT, 0.12) if along_x else Vector3(0.12, FENCE_HEIGHT, 0.7)
+		picket.material = paint
+		mm.mesh = picket
+		mm.instance_count = n
+		for i in n:
+			var t: = -length * 0.5 + (i + 0.5) * length / n
+			mm.set_instance_transform(i, Transform3D(Basis(), origin + tangent * t + Vector3(0, FENCE_HEIGHT * 0.5, 0)))
+		var mmi: = MultiMeshInstance3D.new()
+		mmi.multimesh = mm
+		add_child(mmi)
+
+## Trees and neighbours' houses beyond the fence (no collision).
+func _build_scenery() -> void:
+	var rng: = RandomNumberGenerator.new()
+	rng.seed = 77
+	var i: = 0
+	for side in 4:
+		var along_x: = side < 2
+		var half: = hx if along_x else hz
+		var sgn: = 1.0 if side % 2 == 0 else -1.0
+		var n: = int(half / 9.0)
+		for k in n * 2 + 2:
+			var t: = -half - 8.0 + (k + rng.randf_range(0.2, 0.8)) * (half * 2.0 + 16.0) / (n * 2 + 2)
+			var out: = rng.randf_range(7.0, 20.0)
+			var p: = Vector3(t, 0, sgn * (hz + out)) if along_x else Vector3(sgn * (hx + out), 0, t)
+			# The neighbours' houses stand behind the south fence.
+			if side == 1 and out > 12.0:
+				continue
+			var tree: = ToyFactory.make("pine" if i % 3 == 0 else "tree", i % 4)
+			var sc: = rng.randf_range(2.2, 3.4)
+			tree.scale = Vector3(sc, sc, sc)
+			tree.position = p
+			tree.rotation.y = rng.randf() * TAU
+			add_child(tree)
+			i += 1
+	var roof_colors: = [Color("c45a4a"), Color("4a6fc4"), Color("6b4a2b"), Color("4f8a5a")]
+	for h in 5:
+		var x: = -hx + (h + 0.5) * hx * 2.0 / 5.0
+		var house: = Node3D.new()
+		house.position = Vector3(x, 0, -hz - 34.0 - (h % 2) * 8.0)
+		add_child(house)
+		_box(house, Vector3(16, 10, 12), Vector3(0, 5, 0), _mat(Color("f4ead8").darkened(h * 0.04)))
+		var roof: = MeshInstance3D.new()
+		var prism: = PrismMesh.new()
+		prism.size = Vector3(18, 6, 14)
+		prism.material = _mat(roof_colors[h % roof_colors.size()])
+		roof.mesh = prism
+		roof.position = Vector3(0, 13, 0)
+		house.add_child(roof)
+		_box(house, Vector3(5, 3.5, 0.2), Vector3(-3, 6, 6.05), _glass())
+		_box(house, Vector3(3, 6, 0.2), Vector3(4, 3, 6.05), _mat(Color("a8683f")))
 
 func _build_floor() -> void:
 	var body: = StaticBody3D.new()
@@ -147,8 +288,12 @@ func _build_inner_wall(w: Dictionary, color: Color, trim: Material) -> void:
 	# Solid spans between doorways. Doorways are open to the top: a lintel
 	# trapped the truck in a room once it grew taller than the door.
 	var cuts: Array = []
+	var lintels: Array = []
 	for d in w.get("doors", []):
 		cuts.append([d[0] - d[1] * 0.5, d[0] + d[1] * 0.5])
+		# Optional third value: a low opening (pet flap) only a small truck fits.
+		if d.size() > 2:
+			lintels.append([d[0] - d[1] * 0.5, d[0] + d[1] * 0.5, d[2]])
 	cuts.sort_custom(func(p, q): return p[0] < q[0])
 	var spans: Array = []
 	var t: = 0.0
@@ -158,6 +303,8 @@ func _build_inner_wall(w: Dictionary, color: Color, trim: Material) -> void:
 		t = c[1]
 	if t < length:
 		spans.append([t, length, 0.0, h])
+	for l in lintels:
+		spans.append([l[0], l[1], l[2], h])
 	var mat: = StandardMaterial3D.new()
 	mat.albedo_color = color
 	mat.roughness = 0.9

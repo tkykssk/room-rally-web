@@ -11,6 +11,9 @@ var model_node: Node3D = null
 @export var target_height: float = 1.0
 @export var target_scale: float = 0.0
 @export var base_y: float = 0.0
+## Footprint fraction that is solid (trees and parasols collide with their
+## trunk or pole only, not an invisible box around the canopy).
+var solid_frac: = Vector2.ONE
 ## Colour for food models, whose colormap texture is missing (alpha 0 = keep).
 @export var tint: Color = Color(0, 0, 0, 0)
 
@@ -112,7 +115,12 @@ func _build() -> void:
 		_add_mesh_collision(model)
 	else:
 		var solid_cs: = CollisionShape3D.new()
-		solid_cs.shape = box
+		if solid_frac == Vector2.ONE:
+			solid_cs.shape = box
+		else:
+			var core: = BoxShape3D.new()
+			core.size = Vector3(maxf(w * solid_frac.x, 0.2), hgt, maxf(d * solid_frac.y, 0.2))
+			solid_cs.shape = core
 		solid_cs.position = center
 		_solid.add_child(solid_cs)
 	_occlude_radius = 0.5 * maxf(w, d)

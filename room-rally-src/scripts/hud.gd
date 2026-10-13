@@ -207,7 +207,7 @@ func _build_title() -> void:
 	box.add_child(_label("Smash the room. Grow your truck!", 32, Color.WHITE, 10))
 	var row: = HBoxContainer.new()
 	row.alignment = BoxContainer.ALIGNMENT_CENTER
-	row.add_theme_constant_override("separation", 18)
+	row.add_theme_constant_override("separation", 14)
 	box.add_child(row)
 	for i in Stages.count():
 		row.add_child(_stage_card(i))
@@ -218,7 +218,9 @@ func _stage_card(i: int) -> Control:
 	var st: Dictionary = Stages.get_stage(i)
 	var unlocked: bool = _gm == null or _gm.is_unlocked(i)
 	var rec: Dictionary = _gm.record(i) if _gm else {"best": 0, "stars": 0}
-	var b: = _button("", 1, Vector2(250, 190), PINK if unlocked else Color("8a7fa0"))
+	# Narrower cards when there are more stages, so the row fits 1280 px.
+	var w: = minf(250.0, (1220.0 - 14.0 * (Stages.count() - 1)) / Stages.count())
+	var b: = _button("", 1, Vector2(w, 190), PINK if unlocked else Color("8a7fa0"))
 	b.disabled = not unlocked
 	b.add_theme_stylebox_override("disabled", b.get_theme_stylebox("normal"))
 	b.pressed.connect(func(): _gm.play_stage(i))
