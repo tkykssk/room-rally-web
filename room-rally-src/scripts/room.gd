@@ -145,13 +145,15 @@ func _build_outdoor(stage: Dictionary) -> void:
 	body.add_child(cs)
 	var lawn: = ShaderMaterial.new()
 	lawn.shader = LAWN_SHADER
-	_plane(Vector2(hx * 2.0 + 160.0, hz * 2.0 + 160.0), Vector3.ZERO, lawn)
+	_plane(Vector2(hx * 2.0 + 160.0, hz * 2.0 + 160.0), Vector3(0, -0.22, 0), lawn)
 	var layer: = 0
 	for f in stage.get("floors", []):
 		layer += 1
 		# Patches with a "layer" sit at fixed heights (ground, lots, roads,
 		# markings); otherwise each is a little above the previous one.
-		var y: = 0.01 + float(f.layer) * 0.08 if f.has("layer") else 0.01 + layer * 0.004
+		# All just below the physics ground (y = 0), so props and the truck
+		# stand on the top layer instead of sinking into it.
+		var y: = -0.16 + float(f.layer) * 0.05 if f.has("layer") else -0.06 + layer * 0.004
 		var size: Vector2
 		var pos: Vector3
 		var yaw: = 0.0
@@ -240,7 +242,7 @@ func _build_fence(color: Color) -> void:
 		var mm: = MultiMesh.new()
 		mm.transform_format = MultiMesh.TRANSFORM_3D
 		var picket: = BoxMesh.new()
-		picket.size = Vector3(0.7, FENCE_HEIGHT, 0.12) if along_x else Vector3(0.12, FENCE_HEIGHT, 0.7)
+		picket.size = Vector3(0.7, FENCE_HEIGHT, 0.07) if along_x else Vector3(0.07, FENCE_HEIGHT, 0.7)
 		picket.material = paint
 		mm.mesh = picket
 		mm.instance_count = n
@@ -296,7 +298,7 @@ func _build_fence_line(w: Dictionary, color: Color) -> void:
 			_breakables.append({"tier": int(w.break_tier), "node": pivot, "a": a, "b": b, "h": h, "inner": null})
 		return
 	var picket: = BoxMesh.new()
-	picket.size = Vector3(0.7, h, 0.14)
+	picket.size = Vector3(0.7, h, 0.07)
 	picket.material = paint
 	var xfs: Array = []
 	for sp in spans:
@@ -555,7 +557,8 @@ func _build_platform(p: Dictionary) -> void:
 	add_child(top)
 	_add_box_shape(top, Vector3(size.x, 0.1, size.z), Vector3(0, h - 0.05, 0))
 	_box(self, size, pos + Vector3(0, h * 0.5, 0), _mat(color))
-	_box(self, Vector3(size.x + 0.2, 0.25, size.z + 0.2), pos + Vector3(0, h - 0.12, 0), _mat(color.lightened(0.25)))
+	# The rim stands 0.04 above the top face (0.005 used to z-fight).
+	_box(self, Vector3(size.x + 0.2, 0.25, size.z + 0.2), pos + Vector3(0, h - 0.085, 0), _mat(color.lightened(0.25)))
 
 ## {"from": [x, z, y], "to": [x, z, y], "w": width}: a board the truck can
 ## drive up; its top surface runs from `from` to `to`.

@@ -38,6 +38,7 @@ func _ready() -> void:
 	add_to_group("camera_rig")
 	rotation = Vector3.ZERO
 	camera.far = 300.0
+	camera.near = 0.15
 	var gm: = get_tree().get_first_node_in_group("game_manager")
 	if gm and gm.has_signal("tier_unlocked"):
 		gm.tier_unlocked.connect(_on_tier_unlocked)
@@ -57,6 +58,9 @@ func _on_tier_unlocked(tier: int) -> void:
 	# range in step with its size (the journey grows it ~40x).
 	var k: = sqrt(pow(Vehicle.GROW_PER_TIER, tier))
 	camera.far = maxf(300.0, 300.0 * k)
+	# Depth precision depends mostly on the near plane: push it out with the
+	# camera distance so distant surfaces don't z-fight (flicker).
+	camera.near = 0.15 * _cam_scale(pow(Vehicle.GROW_PER_TIER, tier))
 	var sun: = get_tree().current_scene.get_node_or_null("Sun") as DirectionalLight3D if get_tree().current_scene else null
 	if sun:
 		if _sun_base < 0.0:

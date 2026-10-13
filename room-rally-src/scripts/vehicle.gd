@@ -150,10 +150,12 @@ func _physics_process(delta):
 		else:
 			linear_speed = lerp(linear_speed, target_speed, delta * accel_rate)
 	acceleration = lerpf(acceleration, linear_speed + (abs(sphere.angular_velocity.length() * linear_speed) / 100), delta * 1)
-	vehicle_model.position = sphere.position - Vector3(0, BASE_MODEL_OFFSET + BASE_RADIUS * (phys_scale - 1.0), 0)
+	var base_pos: Vector3 = sphere.position - Vector3(0, BASE_MODEL_OFFSET + BASE_RADIUS * (phys_scale - 1.0), 0)
 	raycast.position = sphere.position
-	linear_velocity = (vehicle_model.position - prev_position) / delta
-	prev_position = vehicle_model.position
+	linear_velocity = (base_pos - prev_position) / delta
+	prev_position = base_pos
+	_model_push = _model_push.lerp(_nose_push(), clampf(delta * 20.0, 0.0, 1.0))
+	vehicle_model.position = base_pos + _model_push
 	effect_engine(delta)
 	effect_body(delta)
 	effect_wheels(delta)
@@ -163,6 +165,47 @@ func _physics_process(delta):
 		for a in _smasher.get_overlapping_areas():
 			if a is Destructible:
 				a.try_smash()
+
+## The truck model is longer than its ball (nose 1.0, tail 0.8 vs radius
+## 0.5, times the size), so against a wall or a big prop the nose used to sink
+## into it. Probe ahead and behind along the heading and slide the model back
+## by however far its nose or tail would be inside something solid.
+const NOSE: = 1.02
+const TAIL: = 0.82
+const HALF_WIDTH: = 0.55
+var _model_push: = Vector3.ZERO
+
+func _nose_push() -> Vector3:
+	var space: = get_world_3d().direct_space_state
+	var fwd: Vector3 = (vehicle_model as Node3D).global_basis.z
+	fwd.y = 0.0
+	if fwd.length_squared() < 0.0001:
+		return Vector3.ZERO
+	fwd = fwd.normalized()
+	var side: = Vector3(fwd.z, 0.0, -fwd.x)
+	var c: = sphere.global_position
+	var s: = size_scale
+	var push: = Vector3.ZERO
+	for end in [[fwd, NOSE], [-fwd, TAIL]]:
+		var dir: Vector3 = end[0]
+		var reach: float = end[1] * s
+		var deepest: = 0.0
+		for k in [-1.0, 0.0, 1.0]:
+			var from: Vector3 = c + side * (HALF_WIDTH * s * k * 0.9)
+			var q: = PhysicsRayQueryParameters3D.create(from, from + dir * reach, 1)
+			q.exclude = [sphere.get_rid()]
+			for attempt in 3:
+				var hit: = space.intersect_ray(q)
+				if hit.is_empty():
+					break
+				# floors, ramps and platform tops are driven on, not into
+				if hit.collider.is_in_group("ground"):
+					q.exclude = q.exclude + [hit.rid]
+					continue
+				deepest = maxf(deepest, reach - from.distance_to(hit.position))
+				break
+		push -= dir * deepest
+	return push
 
 func handle_input(delta):
 	if _gm and not _gm.is_playing():
