@@ -1,0 +1,60 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://scripts/hud.gd" id="1_bxua8"]
+
+[node name="HUD" type="CanvasLayer" unique_id=2031537534]
+script = ExtResource("1_bxua8")
+
+[node name="Score" type="Label" parent="." unique_id=958592349]
+offset_left = 24.0
+offset_top = 18.0
+offset_right = 460.0
+offset_bottom = 78.0
+theme_override_colors/font_outline_color = Color(0, 0, 0, 0.6)
+theme_override_constants/outline_size = 8
+theme_override_font_sizes/font_size = 40
+text = "SCORE  0"
+
+[node name="Time" type="Label" parent="." unique_id=480941044]
+anchors_preset = 1
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -320.0
+offset_top = 18.0
+offset_right = -24.0
+offset_bottom = 78.0
+grow_horizontal = 0
+theme_override_colors/font_outline_color = Color(0, 0, 0, 0.6)
+theme_override_constants/outline_size = 8
+theme_override_font_sizes/font_size = 40
+text = "TIME  60.0"
+horizontal_alignment = 2
+
+[node name="Toast" type="Label" parent="." unique_id=1384372171]
+visible = false
+anchors_preset = 5
+anchor_left = 0.5
+anchor_right = 0.5
+offset_left = -340.0
+offset_top = 120.0
+offset_right = 340.0
+offset_bottom = 180.0
+grow_horizontal = 2
+theme_override_colors/font_outline_color = Color(0, 0, 0, 0.6)
+theme_override_constants/outline_size = 8
+theme_override_font_sizes/font_size = 38
+horizontal_alignment = 1
+
+[node name="Credits" type="Label" parent="." unique_id=1307340848]
+modulate = Color(1, 1, 1, 0.55)
+anchors_preset = 5
+anchor_left = 0.5
+anchor_right = 0.5
+offset_left = -340.0
+offset_top = 10.0
+offset_right = 340.0
+offset_bottom = 32.0
+grow_horizontal = 2
+theme_override_font_sizes/font_size = 16
+text = "SLIME EATER  ·  Made with Godot Engine  ·  3D models & SFX: Kenney.nl (CC0)"
+horizontal_alignment = 1
