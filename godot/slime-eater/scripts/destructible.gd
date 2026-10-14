@@ -28,30 +28,23 @@ var _occ_target: float = 1.0
 var _occ_timer: float = 0.0
 
 
-const EAT_TIME:= 0.7
+const DISSOLVE_SHADER:= preload("res://shaders/prop_dissolve.gdshader")
+const RELEASES_PER_COLOR:= 3
 var _eater: Node3D = null
-var _eat_t: float = 0.0
 var _model: Node3D = null
+var _box_center: Vector3
+var _box_size: Vector3
+var _abs_t: float = 0.0
+var _abs_time: float = 2.0
+var _abs_start: Transform3D
+var _abs_contact: Vector3
+var _abs_extent: float = 1.0
+var _abs_started: bool = false
+var _released: int = 0
+var _dissolve_mats: Array = []
 var _palette: Array = []
 static var _palette_cache:= { }
 
-
-const IMPACT_SFX:= preload("res://audio/impact.ogg")
-static var _debris_mesh_shared: Mesh = null
-
-static func _get_debris_mesh() -> Mesh:
-	if _debris_mesh_shared == null:
-		var m:= SphereMesh.new()
-		m.radius = 0.25
-		m.height = 0.5
-		m.radial_segments = 8
-		m.rings = 4
-		var mat:= StandardMaterial3D.new()
-		mat.vertex_color_use_as_albedo = true
-		mat.roughness = 0.2
-		m.material = mat
-		_debris_mesh_shared = m
-	return _debris_mesh_shared
 
 func _ready() -> void:
 	collision_layer = 2
@@ -95,6 +88,8 @@ func _build() -> void:
 	var cx:= (aabb.position.x + aabb.size.x * 0.5) * s
 	var cz:= (aabb.position.z + aabb.size.z * 0.5) * s
 	var center:= Vector3(cx, base_y + hgt * 0.5, cz)
+	_box_center = center
+	_box_size = box.size
 
 	var area_cs:= CollisionShape3D.new()
 	area_cs.shape = box
@@ -262,71 +257,91 @@ func try_eat(eater: Node3D) -> void:
 	if _solid:
 		_solid.collision_layer = 0
 	set_deferred("monitorable", false)
-	if not _fade_mats.is_empty():
-		_apply_alpha(1.0)
 	if _manager and _manager.has_method("add_score"):
 		_manager.add_score(score_value)
-	var center:= global_position + Vector3(0, target_height * 0.5, 0)
-	if eater.has_method("eat"):
-		eater.eat(_palette, float(score_value), center)
-	_spawn_effect(global_position, target_height)
+
+
+	var mouth: Vector3 = eater.get_mouth_position()
+	var local_mouth:= global_transform.affine_inverse() * mouth
+	var half:= _box_size * 0.5
+	var local_contact:= local_mouth.clamp(_box_center - half, _box_center + half)
+	var contact:= global_transform * local_contact
+	if eater.has_method("absorb_begin"):
+		eater.absorb_begin(contact, float(score_value))
+	_begin_absorb.call_deferred(contact)
+
+
+func _begin_absorb(contact_world: Vector3) -> void:
+	if not is_instance_valid(_eater):
+		queue_free()
+		return
+	if _solid:
+		_solid.queue_free()
+		_solid = null
+	_fade_mats.clear()
+	_make_dissolvable()
+
+
+	var pivot: Node3D = _eater.body_pivot
+	reparent(pivot)
+	_abs_start = transform
+	_abs_contact = pivot.global_transform.affine_inverse() * contact_world
+	_abs_extent = maxf(_box_size.length(), 0.3)
+	var slime_r: float = _eater.get_body_radius()
+	_abs_time = clampf(1.2 + 1.8 * _box_size.length() / slime_r, 1.2, 4.0)
+	_abs_started = true
+
+func _make_dissolvable() -> void:
+	if _model == null:
+		return
+	for n in _mesh_instances(_model):
+		for si in n.mesh.get_surface_count():
+			var m = n.get_active_material(si)
+			var sm:= ShaderMaterial.new()
+			sm.shader = DISSOLVE_SHADER
+			if m is BaseMaterial3D:
+				sm.set_shader_parameter("albedo", Color(m.albedo_color, 1.0))
+				sm.set_shader_parameter("roughness", m.roughness)
+			n.set_surface_override_material(si, sm)
+			_dissolve_mats.append(sm)
 
 
 func _process_eaten(delta: float) -> void:
 	if not is_instance_valid(_eater):
 		queue_free()
 		return
-	_eat_t += delta
-	var k:= clampf(_eat_t / EAT_TIME, 0.0, 1.0)
-	var s:= 1.0 - k * k
-	scale = Vector3(s, s, s)
-	var target: Vector3 = _eater.get_mouth_position() - Vector3(0, target_height * 0.5 * s, 0)
-	global_position = global_position.lerp(target, clampf(delta * 10.0, 0.0, 1.0))
-	rotation.y += delta * 6.0
+	if not _abs_started:
+		return
+	_abs_t += delta
+	var k:= clampf(_abs_t / _abs_time, 0.0, 1.0)
+	var e:= 1.0 - (1.0 - k) * (1.0 - k)
+
+
+	var s:= lerpf(1.0, 0.55, e)
+	var target:= _abs_contact * lerpf(1.0, 0.15, e)
+	transform = Transform3D(Basis.from_scale(Vector3(s, s, s)), target) * Transform3D(Basis(), -_abs_contact) * _abs_start
+
+	var pivot: Node3D = _eater.body_pivot
+	var contact_world:= pivot.global_transform * target
+	var center_world:= global_transform * _box_center
+	var edge: Color = _eater.get_body_color() if _eater.has_method("get_body_color") else Color(0.5, 1.0, 0.6)
+	for m in _dissolve_mats:
+		m.set_shader_parameter("contact", contact_world)
+		m.set_shader_parameter("extent", _abs_extent * s)
+		m.set_shader_parameter("progress", k)
+		m.set_shader_parameter("edge_color", edge)
+	if _eater.has_method("absorb_hold"):
+		_eater.absorb_hold(contact_world, 1.0 - k)
+
+
+	var total:= RELEASES_PER_COLOR * _palette.size()
+	while _released < total and k >= (float(int(_released / _palette.size())) + 0.5) / RELEASES_PER_COLOR:
+		var entry: Array = _palette[_released % _palette.size()]
+		var front:= contact_world.lerp(center_world, minf(k * 1.4, 1.0))
+		_eater.release_pigment(entry[0], float(score_value) * entry[1] / RELEASES_PER_COLOR, front)
+		_released += 1
 	if k >= 1.0:
 		queue_free()
-
-
-func _spawn_effect(pos: Vector3, h: float) -> void:
-	var host:= get_parent()
-	if host == null:
-		return
-	var fx:= CPUParticles3D.new()
-	fx.emitting = false
-	fx.one_shot = true
-	fx.explosiveness = 1.0
-	fx.amount = clampi(int(h * 6.0), 8, 32)
-	fx.lifetime = 0.5
-	fx.mesh = _get_debris_mesh()
-	fx.direction = Vector3(0, 1, 0)
-	fx.spread = 60.0
-	fx.initial_velocity_min = 2.0 + h
-	fx.initial_velocity_max = 5.0 + h * 1.5
-	fx.gravity = Vector3(0, -9.8, 0)
-	var sc:= clampf(h * 0.16, 0.12, 1.0)
-	fx.scale_amount_min = sc * 0.7
-	fx.scale_amount_max = sc
-	if not _palette.is_empty():
-		var grad:= Gradient.new()
-		grad.offsets = PackedFloat32Array([0.0])
-		grad.colors = PackedColorArray([_palette[0][0]])
-		for i in range(1, _palette.size()):
-			grad.add_point(float(i) / _palette.size(), _palette[i][0])
-		grad.interpolation_mode = Gradient.GRADIENT_INTERPOLATE_CONSTANT
-		fx.color_initial_ramp = grad
-	host.add_child(fx)
-	fx.global_position = pos + Vector3(0, h * 0.5, 0)
-	fx.emitting = true
-	fx.finished.connect(fx.queue_free)
-
-	var sfx:= AudioStreamPlayer3D.new()
-	sfx.stream = IMPACT_SFX
-	sfx.volume_db = -10.0
-	sfx.pitch_scale = 1.6
-	host.add_child(sfx)
-	sfx.global_position = pos
-	sfx.play()
-	sfx.finished.connect(sfx.queue_free)
 
 
 func _local_aabb(root: Node3D) -> AABB:

@@ -52,7 +52,7 @@ const SPHERE_BASE_RADIUS:= 0.5
 const BODY_BOTTOM:= 0.6625
 
 
-const MOUTH_BASE_RADIUS:= 1.0
+const MOUTH_BASE_RADIUS:= 0.72
 var _mouth: Area3D = null
 var _mouth_shape: SphereShape3D = null
 var _mouth_tick: int = 0
@@ -285,24 +285,35 @@ func _seed_blobs() -> void:
 		var p:= Vector3(randf_range(-1, 1), randf_range(-0.4, 0.6), randf_range(-1, 1)).normalized() * randf_range(0.2, 0.6)
 		_add_blob(p, Vector3.ZERO, lc, base_blob_mass, randf_range(-0.2, 0.2))
 
-func eat(palette: Array, amount: float, from_world: Vector3) -> void:
-	var local:= body_pivot.global_transform.affine_inverse() * from_world
-	local.y = clampf(local.y, -0.3, 0.8)
-	var dir:= local.normalized() if local.length() > 0.01 else Vector3.FORWARD
-	var entry:= dir * BLOB_LIMIT
-	for entry_col in palette:
-		var c: Color = entry_col[0]
-		var w: float = entry_col[1]
-		var p:= entry + Vector3(randf_range(-0.1, 0.1), randf_range(-0.1, 0.1), randf_range(-0.1, 0.1))
-		var v:= -dir * randf_range(1.5, 2.5) + Vector3(randf_range(-0.5, 0.5), randf_range(-0.3, 0.6), randf_range(-0.5, 0.5))
-
-		var dens:= clampf(0.6 - c.v, -0.6, 0.6)
-		_add_blob(p, v, _to_log(c), amount * w, dens)
-	_bulge_dir = dir
-	_bulge = 0.35
-	_squash_v += 2.5
+func absorb_begin(contact_world: Vector3, amount: float) -> void:
+	_bulge_dir = _to_body_dir(contact_world)
+	_bulge = 0.3
+	_squash_v += 1.5
 	gulp_sound.pitch_scale = clampf(1.3 / sqrt(maxf(amount / 20.0, 0.5)), 0.6, 1.6) * randf_range(0.9, 1.1)
 	gulp_sound.play()
+
+
+func absorb_hold(contact_world: Vector3, strength: float) -> void:
+	_bulge_dir = _bulge_dir.slerp(_to_body_dir(contact_world), 0.2)
+	_bulge = maxf(_bulge, 0.25 * strength)
+
+
+func release_pigment(c: Color, mass: float, world_pos: Vector3) -> void:
+	var p:= body_pivot.global_transform.affine_inverse() * world_pos
+	if p.length() > BLOB_LIMIT:
+		p = p.normalized() * BLOB_LIMIT
+	p.y = maxf(p.y, BLOB_FLOOR)
+	var v:= -p.normalized() * randf_range(0.6, 1.2) + Vector3(randf_range(-0.3, 0.3), randf_range(-0.2, 0.3), randf_range(-0.3, 0.3))
+
+	var dens:= clampf(0.6 - c.v, -0.6, 0.6)
+	_add_blob(p, v, _to_log(c), mass, dens)
+
+func get_body_radius() -> float:
+	return body_radius * _vis_scale
+
+func _to_body_dir(world_pos: Vector3) -> Vector3:
+	var local:= body_pivot.global_transform.affine_inverse() * world_pos
+	return local.normalized() if local.length() > 0.01 else Vector3.FORWARD
 
 func _add_blob(p: Vector3, v: Vector3, lc: Vector3, m: float, dens: float) -> void:
 	if _bp.size() >= MAX_BLOBS:
