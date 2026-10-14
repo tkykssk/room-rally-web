@@ -298,7 +298,7 @@ func _build_title() -> void:
 	var title: = _label("SLIME EATER", 84, Color.WHITE, 22)
 	title.add_theme_color_override("font_outline_color", PINK)
 	box.add_child(title)
-	box.add_child(_label("Eat everything. Mix the colours. Grow!", 28, Color.WHITE, 10))
+	box.add_child(_label("Eat things to mix your colour. Match the colour orders!", 28, Color.WHITE, 10))
 	# The journey is the main mode; the fixed rooms are timed challenges.
 	var journey: = -1
 	var challenges: Array = []

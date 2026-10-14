@@ -8,6 +8,7 @@
 [ext_resource type="PackedScene" path="res://scenes/hud.tscn" id="6_puafc"]
 [ext_resource type="Script" path="res://scripts/touch_controls.gd" id="7_mhfwe"]
 [ext_resource type="Script" path="res://scripts/prop_spawner.gd" id="9_2assh"]
+[ext_resource type="Script" path="res://scripts/color_orders.gd" id="20_orders"]
 
 [node name="Main" type="Node3D" unique_id=1021786882]
 
@@ -51,3 +52,6 @@ script = ExtResource("7_mhfwe")
 
 [node name="Props" type="Node3D" parent="." unique_id=827287123]
 script = ExtResource("9_2assh")
+
+[node name="ColorOrders" type="CanvasLayer" parent="."]
+script = ExtResource("20_orders")

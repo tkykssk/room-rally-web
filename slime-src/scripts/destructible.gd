@@ -83,6 +83,7 @@ static func _get_debris_colors() -> Gradient:
 	return _debris_colors
 
 func _ready() -> void:
+	add_to_group("edible")
 	collision_layer = 2
 	collision_mask = 0
 	monitoring = false
@@ -380,10 +381,19 @@ func _process_eaten(delta: float) -> void:
 	while _released < RELEASES_PER_COLOR * n and k >= (float(int(_released / n)) + 0.5) / RELEASES_PER_COLOR:
 		var entry: Array = _palette[_released % n]
 		var front: = contact_world.lerp(center_world, minf(k * 1.4, 1.0))
-		_eater.release_pigment(entry[0], float(score_value) * entry[1] / RELEASES_PER_COLOR, front)
+		_eater.release_pigment(entry[0], _eater.pigment_mass(score_value) * entry[1] / RELEASES_PER_COLOR, front)
 		_released += 1
 	if k >= 1.0:
 		queue_free()
+
+## The colour eating this prop pushes the slime towards: its palette mixed
+## the way the slime mixes pigment (log space, weighted by area).
+func eaten_color() -> Color:
+	var acc: = Vector3.ZERO
+	for e in _palette:
+		var c: Color = e[0]
+		acc += Vector3(log(maxf(c.r, 0.03)), log(maxf(c.g, 0.03)), log(maxf(c.b, 0.03))) * float(e[1])
+	return Color(exp(acc.x), exp(acc.y), exp(acc.z))
 
 ## Up to three dominant colours of the model, weighted by surface area and
 ## made more saturated so they show when mixed into the slime.

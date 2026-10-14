@@ -179,6 +179,19 @@ func add_score(amount: int) -> void:
 		room_cleared.emit(clear_bonus)
 		_finish()
 
+## Slime: points and time from a completed colour order. Not a prop, so the
+## props-left count is untouched.
+func add_bonus(points: int, seconds: float) -> void:
+	if not playing:
+		return
+	score += points
+	score_changed.emit(score)
+	if seconds > 0.0:
+		time_left += seconds
+		time_bonus.emit(seconds)
+		time_changed.emit(time_left)
+	_check_unlock()
+
 ## Journey: everything in the world has been smashed.
 func world_cleared() -> void:
 	if not playing or cleared:

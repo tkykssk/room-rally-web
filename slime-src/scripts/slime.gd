@@ -11,7 +11,10 @@ signal bumped(strength: float)
 
 @export_group("Tuning")
 
-@export var steering_strength: float = 4.0
+@export var steering_strength: float = 3.5
+
+## How quickly turning starts and stops (1/s).
+@export var steer_response: float = 16.0
 
 @export var accel_rate: float = 5.0
 
@@ -27,14 +30,11 @@ signal bumped(strength: float)
 @export var grip: float = 10.0
 @export var air_grip: float = 1.5
 
-@export var grip_min: float = 0.3
-@export var grip_max: float = 1.0
-
 @export var jump_speed: float = 6.5
 
 @export_group("Body")
 
-@export var body_radius: float = 0.6
+@export var body_radius: float = 0.56
 @export var base_color: Color = Color(0.45, 0.95, 0.6)
 @export var base_blobs: int = 8
 @export var base_blob_mass: float = 12.0
@@ -58,7 +58,7 @@ signal bumped(strength: float)
 var size_scale: float = 1.0
 var _vis_scale: float = 1.0
 const GROW_PER_TIER:= 1.5
-const SPHERE_BASE_RADIUS:= 0.5
+const SPHERE_BASE_RADIUS:= 0.52
 const BODY_BOTTOM:= 0.6625
 
 
@@ -111,8 +111,9 @@ const TURBULENCE:= 1.5
 const VISCOSITY:= 1.8
 const MIN_COLOR:= 0.03
 
-const DIGEST_TIME:= 20.0
-const DIGEST_FLOOR:= 100.0
+const DIGEST_TIME:= 10.0
+const DIGEST_FLOOR:= 60.0
+const MIN_MEAL_SHARE:= 0.1
 
 var _bp: PackedVector3Array = []
 var _bv: PackedVector3Array = []
@@ -197,10 +198,9 @@ func _physics_process(delta):
 	var direction = sign(linear_speed)
 	if direction == 0: direction = sign(input.z) if abs(input.z) > 0.1 else 1
 
-	var steering_grip = clamp(abs(linear_speed), grip_min, grip_max)
 
-	var target_angular = -input.x * steering_grip * steering_strength * direction
-	angular_speed = lerp(angular_speed, target_angular, delta * 4)
+	var target_angular = -input.x * steering_strength * direction
+	angular_speed = lerp(angular_speed, target_angular, 1.0 - exp(-steer_response * delta))
 
 	body_root.rotate_y(angular_speed * delta)
 
@@ -269,10 +269,11 @@ func handle_input(delta):
 	if _gm and not _gm.is_playing():
 		input.x = 0.0
 		input.z = 0.0
-	elif grounded:
+	else:
+
 		input.x = Input.get_axis("left", "right")
 		input.z = Input.get_axis("back", "forward")
-		if Input.is_action_just_pressed("bounce"):
+		if grounded and Input.is_action_just_pressed("bounce"):
 			sphere.linear_velocity.y = jump_speed * sqrt(_vis_scale)
 			_squash_v -= 5.0
 
@@ -284,10 +285,14 @@ func handle_input(delta):
 	var v:= sphere.linear_velocity
 	var v_h:= Vector3(v.x, 0.0, v.z)
 	var target:= fwd * linear_speed * top_speed * _vis_scale
-	var k:= 1.0 - exp(-(grip if grounded else air_grip) * delta)
+	var touching:= grounded or sphere.get_contact_count() > 0
+	var k:= 1.0 - exp(-(grip if touching else air_grip) * delta)
 	v_h = v_h.lerp(target, k)
 	sphere.linear_velocity = Vector3(v_h.x, v.y, v_h.z)
-
+	# Spin to match (rolling without slipping), so the rough floor doesn't
+	# brake the ball. The slime's material isn't rough, so against the
+	# frictionless walls and boxes the spin can't climb them (it used to wedge
+	# the ball up an obstacle, where the ground ray missed).
 	sphere.angular_velocity = Vector3.UP.cross(v_h) / sphere_shape.radius
 
 
@@ -296,8 +301,8 @@ func _step_body(delta: float, a_local: Vector3) -> void:
 	var scl:= 1.0 / sqrt(_vis_scale)
 	_wobble_v += (-WOBBLE_K * _wobble - WOBBLE_C * _wobble_v - Vector3(a_local.x, 0.0, a_local.z) * WOBBLE_GAIN * WOBBLE_K * scl) * delta
 	_wobble += _wobble_v * delta
-	if _wobble.length() > 0.35:
-		_wobble = _wobble.normalized() * 0.35
+	if _wobble.length() > 0.25:
+		_wobble = _wobble.normalized() * 0.25
 
 	_squash_v += (-SQUASH_K * _squash - SQUASH_C * _squash_v - a_local.y * SQUASH_GAIN * SQUASH_K * scl) * delta
 	_squash += _squash_v * delta
@@ -338,6 +343,17 @@ func release_pigment(c: Color, mass: float, world_pos: Vector3) -> void:
 
 	var dens:= clampf(0.6 - c.v, -0.6, 0.6)
 	_add_blob(p, v, _to_log(c), mass, dens)
+
+## Pigment mass the body digests down to. Grows with size like the props'
+## points do, so a prop of the current size shifts the colour about as much
+## at any size.
+func _digest_floor() -> float:
+	return DIGEST_FLOOR * pow(_vis_scale, 1.6)
+
+## Pigment mass for a meal: its points, but at least a noticeable share of the
+## body so small snacks still help steer the colour.
+func pigment_mass(points: float) -> float:
+	return maxf(points, MIN_MEAL_SHARE * _digest_floor())
 
 func get_body_radius() -> float:
 	return body_radius * _vis_scale
@@ -420,7 +436,7 @@ func _step_pigments(delta: float, a_local: Vector3) -> void:
 	var total:= 0.0
 	for i in n:
 		total += _bm[i]
-	var floor_mass:= DIGEST_FLOOR * _vis_scale * _vis_scale
+	var floor_mass:= _digest_floor()
 	if total > floor_mass:
 		var k:= maxf(exp(-delta / DIGEST_TIME), floor_mass / total)
 		for i in n:
