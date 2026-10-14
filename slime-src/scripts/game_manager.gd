@@ -1,0 +1,286 @@
+extends Node
+
+## Score, timer and tier unlocks (unchanged rules), plus the run flow:
+## title -> playing <-> paused -> result, and the saved best score.
+
+signal score_changed(new_score: int)
+signal time_changed(time_left: float)
+signal tier_unlocked(tier: int)
+signal game_over(final_score: int)
+signal state_changed(state: int)
+signal room_cleared(bonus: int)
+## A prop was destroyed (for score popups and camera shake).
+signal smashed(world_pos: Vector3, points: int, height: float)
+## Journey: seconds added for growing a tier.
+signal time_bonus(seconds: float)
+
+enum State {TITLE, PLAYING, PAUSED, RESULT}
+
+@export var game_duration: float = 60.0
+@export var tier_thresholds: Array[int] = [80, 280, 600, 1000, 1600, 2600]
+
+const SAVE_PATH: = "user://save.cfg"
+
+## Set by restart() so a retry skips the title screen.
+static var _skip_title: bool = false
+
+var score: int = 0
+var unlocked_tier: int = 0
+var time_left: float = 0.0
+var playing: bool = false
+var state: int = State.TITLE
+var best_score: int = 0
+var _last_shown_time: int = -1
+var total_points: int = 0
+var props_left: int = 0
+var clear_bonus: int = 0
+var cleared: = false
+const CLEAR_BONUS_PER_SECOND: = 20
+
+var stage: Dictionary
+var star_goals: Array = []
+## Per-stage records: {index: {"best": int, "stars": int}}.
+var records: Dictionary = {}
+
+func _ready() -> void:
+	process_mode = Node.PROCESS_MODE_ALWAYS
+	stage = Stages.get_stage()
+	game_duration = stage.time
+	records = _load_records()
+	best_score = record(Stages.current).best
+	reset()
+	if _skip_title:
+		_skip_title = false
+		start.call_deferred()
+	else:
+		_set_state(State.TITLE)
+
+func reset() -> void:
+	score = 0
+	unlocked_tier = 0
+	time_left = game_duration
+	playing = false
+	score_changed.emit(score)
+	time_changed.emit(time_left)
+
+func is_playing() -> bool:
+	return state == State.PLAYING
+
+## Start the selected stage (from the title / stage select).
+func play_stage(i: int) -> void:
+	if not is_unlocked(i):
+		return
+	if i != Stages.current:
+		Stages.current = i
+		_skip_title = true
+		get_tree().reload_current_scene()
+		return
+	start()
+
+func start() -> void:
+	if state != State.TITLE:
+		return
+	_set_state(State.PLAYING)
+	CG.gameplay_start()
+	Audio.play("start")
+	Audio.play_music()
+
+func pause() -> void:
+	if state == State.PLAYING:
+		_set_state(State.PAUSED)
+		CG.gameplay_stop()
+
+func resume() -> void:
+	if state == State.PAUSED:
+		_set_state(State.PLAYING)
+		CG.gameplay_start()
+
+func _set_state(s: int) -> void:
+	state = s
+	playing = s == State.PLAYING
+	get_tree().paused = s == State.PAUSED
+	state_changed.emit(s)
+
+func _unhandled_input(event: InputEvent) -> void:
+	if event.is_action_pressed("pause"):
+		if state == State.PLAYING:
+			pause()
+		elif state == State.PAUSED:
+			resume()
+		get_viewport().set_input_as_handled()
+
+func _notification(what: int) -> void:
+	# Losing focus (tab switch, ad overlay) pauses the run.
+	if what == NOTIFICATION_APPLICATION_FOCUS_OUT:
+		pause()
+
+func _process(delta: float) -> void:
+	if state != State.PLAYING:
+		return
+	var before: = time_left
+	time_left -= delta
+	if time_left <= 10.0 and ceilf(time_left) < ceilf(before) and time_left > 0.0:
+		Audio.play("tick", 1.0 if time_left > 3.0 else 1.25)
+	if time_left <= 0.0:
+		time_left = 0.0
+		time_changed.emit(time_left)
+		_finish()
+		return
+	var shown: = int(time_left * 10.0)
+	if shown != _last_shown_time:
+		_last_shown_time = shown
+		time_changed.emit(time_left)
+
+## Called by the prop spawner once the stage is laid out. Tier thresholds
+## come from the points available below each tier, so a layout change keeps
+## the progression fair without hand-tuning numbers.
+func set_stage_props(count: int, points: int, points_by_tier: Dictionary = {}) -> void:
+	props_left = count
+	total_points = points
+	var st: Dictionary = Stages.get_stage()
+	if st.has("tier_thresholds"):
+		# Journey: the world appears zone by zone, so goals are set by hand.
+		tier_thresholds.clear()
+		for v in st.tier_thresholds:
+			tier_thresholds.append(int(v))
+		star_goals = st.star_scores.duplicate()
+		score_changed.emit(score)
+		return
+	if not points_by_tier.is_empty():
+		tier_thresholds.clear()
+		var prev: = 0
+		var fractions: Array = Stages.get_stage().get("tier_fractions", Stages.TIER_FRACTIONS)
+		for k in range(1, fractions.size() + 1):
+			var below: = 0
+			for t in points_by_tier:
+				if t < k:
+					below += points_by_tier[t]
+			var thr: = maxi(int(round(below * fractions[k - 1] / 10.0)) * 10, prev + 10)
+			tier_thresholds.append(thr)
+			prev = thr
+	star_goals.clear()
+	for f in Stages.STAR_FRACTIONS:
+		star_goals.append(points if f >= 1.0 else int(round(points * f / 50.0)) * 50)
+	score_changed.emit(score)
+
+func add_score(amount: int) -> void:
+	if not playing:
+		return
+	score += amount
+	props_left -= 1
+	score_changed.emit(score)
+	_check_unlock()
+	if props_left <= 0 and not is_journey():
+		# Everything smashed: end early, remaining time becomes bonus points.
+		cleared = true
+		clear_bonus = int(ceilf(time_left)) * CLEAR_BONUS_PER_SECOND
+		score += clear_bonus
+		score_changed.emit(score)
+		room_cleared.emit(clear_bonus)
+		_finish()
+
+## Journey: everything in the world has been smashed.
+func world_cleared() -> void:
+	if not playing or cleared:
+		return
+	cleared = true
+	clear_bonus = int(ceilf(time_left)) * CLEAR_BONUS_PER_SECOND
+	score += clear_bonus
+	score_changed.emit(score)
+	room_cleared.emit(clear_bonus)
+	_finish()
+
+func _check_unlock() -> void:
+	while unlocked_tier < tier_thresholds.size() and score >= tier_thresholds[unlocked_tier]:
+		unlocked_tier += 1
+		# Journey: growing buys time, so a good run keeps going.
+		var bonus: Array = stage.get("tier_time", [])
+		if unlocked_tier - 1 < bonus.size():
+			time_left += float(bonus[unlocked_tier - 1])
+			time_bonus.emit(float(bonus[unlocked_tier - 1]))
+			time_changed.emit(time_left)
+		tier_unlocked.emit(unlocked_tier)
+		Audio.play("tier_up")
+
+func report_smash(world_pos: Vector3, points: int, height: float) -> void:
+	if playing:
+		smashed.emit(world_pos, points, height)
+
+## Score needed for the next tier, or -1 when every tier is open.
+func next_threshold() -> int:
+	return tier_thresholds[unlocked_tier] if unlocked_tier < tier_thresholds.size() else -1
+
+func stars_for(value: int) -> int:
+	var n: = 0
+	for g in star_goals:
+		if value >= g:
+			n += 1
+	return n
+
+## Records are keyed by stage name, so adding a stage keeps old saves valid.
+func record(i: int) -> Dictionary:
+	return records.get(Stages.get_stage(i).name, {"best": 0, "stars": 0, "tier": 0})
+
+func is_journey(i: int = -1) -> bool:
+	return Stages.get_stage(i).get("journey", false)
+
+## The journey and the first challenge are always open; each later challenge
+## opens once the previous one has at least one star.
+func is_unlocked(i: int) -> bool:
+	if is_journey(i) or i == 0:
+		return true
+	if is_journey(i - 1):
+		return true
+	return record(i - 1).stars >= 1
+
+func has_next_stage() -> bool:
+	if is_journey():
+		return false
+	return Stages.current + 1 < Stages.count() and is_unlocked(Stages.current + 1)
+
+func _finish() -> void:
+	var stars: = stars_for(score)
+	var rec: Dictionary = record(Stages.current)
+	var new_best: bool = score > rec.best
+	if new_best or stars > rec.stars or unlocked_tier > rec.get("tier", 0):
+		records[stage.name] = {"best": maxi(score, rec.best), "stars": maxi(stars, rec.stars),
+			"tier": maxi(unlocked_tier, rec.get("tier", 0))}
+		_save_records()
+	best_score = record(Stages.current).best
+	CG.gameplay_stop()
+	if new_best and score > 0:
+		CG.happytime()
+	_set_state(State.RESULT)
+	Audio.stop_music()
+	Audio.play("result")
+	game_over.emit(score)
+
+func restart() -> void:
+	_reload_after_ad(Stages.current, true)
+
+func next_stage() -> void:
+	if has_next_stage():
+		_reload_after_ad(Stages.current + 1, true)
+
+func to_stage_select() -> void:
+	_reload_after_ad(Stages.current, false)
+
+## Between rounds is the natural break for a CrazyGames midgame ad.
+func _reload_after_ad(stage_index: int, skip_title: bool) -> void:
+	get_tree().paused = false
+	CG.midgame_ad(func():
+		Stages.current = stage_index
+		_skip_title = skip_title
+		get_tree().reload_current_scene())
+
+func _load_records() -> Dictionary:
+	var cfg: = ConfigFile.new()
+	if cfg.load(SAVE_PATH) != OK:
+		return {}
+	return cfg.get_value("records", "by_name", {})
+
+func _save_records() -> void:
+	var cfg: = ConfigFile.new()
+	cfg.load(SAVE_PATH)
+	cfg.set_value("records", "by_name", records)
+	cfg.save(SAVE_PATH)

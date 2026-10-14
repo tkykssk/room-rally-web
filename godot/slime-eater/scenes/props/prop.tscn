@@ -1,7 +1,0 @@
-[gd_scene format=3]
-
-[ext_resource type="Script" path="res://scripts/destructible.gd" id="1_wrrbq"]
-
-[node name="Prop" type="Area3D" unique_id=2113214965]
-collision_mask = 8
-script = ExtResource("1_wrrbq")
