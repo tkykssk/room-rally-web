@@ -74,11 +74,13 @@ var _sun_base: = -1.0
 ## challenge stages), then pulling back faster so a giant truck (journey,
 ## up to ~38x) doesn't fill the screen.
 static func _cam_scale(s: float) -> float:
-	const KNEE: = 11.39
+	const KNEE: = 3.375
 	s = maxf(s, 1.0)
 	if s <= KNEE:
 		return sqrt(s)
-	return sqrt(KNEE) * pow(s / KNEE, 0.85)
+	# Past tier 3 pull back almost in step with the size, so the truck stays
+	# a readable part of the screen instead of filling it.
+	return sqrt(KNEE) * pow(s / KNEE, 0.9)
 
 func toggle_mode() -> void:
 	mode = Mode.OVERHEAD if mode == Mode.CHASE else Mode.CHASE
@@ -87,9 +89,26 @@ func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_C:
 		toggle_mode()
 
+## On a portrait screen a fixed vertical field of view leaves a very narrow
+## view sideways; keep the horizontal one a 16:9 screen would have instead.
+var _base_fov: = -1.0
+func _fit_fov() -> void:
+	if _base_fov < 0.0:
+		_base_fov = camera.fov
+	var vp: = get_viewport().get_visible_rect().size
+	if vp.y <= 0.0:
+		return
+	if vp.x < vp.y:
+		camera.keep_aspect = Camera3D.KEEP_WIDTH
+		camera.fov = rad_to_deg(2.0 * atan(tan(deg_to_rad(_base_fov) * 0.5) * 16.0 / 9.0))
+	else:
+		camera.keep_aspect = Camera3D.KEEP_HEIGHT
+		camera.fov = _base_fov
+
 func _physics_process(delta: float) -> void:
 	if target == null:
 		return
+	_fit_fov()
 	global_position = global_position.lerp(target.get_vehicle_position(), delta * follow_speed)
 	var target_yaw: float = rotation.y
 	if mode == Mode.CHASE:

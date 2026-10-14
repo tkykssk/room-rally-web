@@ -79,6 +79,8 @@ func _ready() -> void:
 	cs.shape = cs.shape.duplicate()
 	_ball_shape = cs.shape
 	_build_smasher()
+	if model_root:
+		model_root.position.y = MODEL_GROUND_LIFT
 
 var _ball_shape: SphereShape3D = null
 var _bump_ready_at: int = 0
@@ -104,7 +106,9 @@ func set_size_scale(s: float) -> void:
 	if model_root:
 		var tw: = create_tween().set_parallel(true)
 		tw.tween_property(model_root, "scale", Vector3(s, s, s), 0.3)
-		tw.tween_property(model_root, "position:y", MODEL_GROUND_LIFT * (s - 1.0), 0.3)
+		# The wheels sit MODEL_GROUND_LIFT below the model's origin at any
+		# scale; a lift that grew with the size made a big truck float.
+		tw.tween_property(model_root, "position:y", MODEL_GROUND_LIFT, 0.3)
 	if _smash_shape:
 		_smash_shape.radius = SMASH_BASE_RADIUS * s
 	# One resize at a time: overlapping tweens (several tier-ups in one
